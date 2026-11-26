@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>포켓몬 로그라이크</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'DungGeunMo','Courier New',monospace}
+body{background:#202020;color:#101010;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:12px}
+#game-container{width:100%;max-width:600px;background:#f8f8f8;border:4px solid #303030;border-radius:12px;overflow:hidden}
+header{background:#cc0000;color:white;text-align:center;padding:15px;font-size:1.3rem;font-weight:bold}
+#floor-display{background:#303030;color:white;text-align:center;padding:10px;font-weight:bold}
+#screen{padding:20px;background:linear-gradient(#e0f7fa,#fff);min-height:250px;display:flex;flex-direction:column;justify-content:space-between;border-bottom:4px solid #303030;gap:20px}
+.status-box{background:#f8f9fa;border:3px solid #303030;border-radius:8px;padding:10px 15px;width:85%;box-shadow:3px 3px 0 #888}
+.opponent{align-self:flex-start}.player{align-self:flex-end}
+.pokemon-info{display:flex;justify-content:space-between;font-weight:bold;margin-bottom:6px;gap:8px}
+.hp-bar-outer{width:100%;height:16px;background:#e0e0e0;border:2px solid #303030;border-radius:8px;overflow:hidden}
+.hp-bar-inner{height:100%;width:100%;background:#4caf50;transition:width .3s}
+.hp-text{text-align:right;font-size:.85rem;margin-top:4px;font-weight:bold}
+#log-box{min-height:100px;max-height:160px;background:#2b2b2b;color:white;padding:12px 16px;font-size:.95rem;line-height:1.5;border-bottom:4px solid #303030;overflow-y:auto;white-space:pre-wrap}
+#info{padding:10px;background:#e9e9e9;border-bottom:2px solid #333;font-size:.85rem;line-height:1.7}
+#controls{padding:15px;background:#f0f0f0;min-height:150px}
+.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{padding:12px 8px;font-size:1rem;font-weight:bold;background:white;border:3px solid #303030;border-radius:6px;cursor:pointer;box-shadow:2px 2px 0 #303030}
+button:active:not(:disabled){transform:translate(1px,1px);box-shadow:none}
+button:disabled{background:#ccc;color:#777;cursor:not-allowed}
+input{width:100%;padding:12px;font-size:1rem;border:3px solid #303030;border-radius:6px}
+.hidden{display:none!important}.full{grid-column:span 2}
+.save-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;background:#ddd}
+.save-controls button{font-size:.85rem;padding:9px 5px}
+#save-status{text-align:center;background:#eee;padding:6px;font-size:.8rem;color:#333}
+.small{font-size:.78rem;color:#555;text-align:center;padding:5px}
+</style>
+</head>
+<body>
+<div id="game-container">
+<header>⚡ POKÉMON ROGUELIKE ⚡</header>
+<div id="floor-display">🏰 준비 중</div>
+<div id="screen">
+<div class="status-box opponent">
+<div class="pokemon-info"><span id="opp-name">야생 포켓몬</span><span id="opp-level">Lv.?</span></div>
+<div class="hp-bar-outer"><div id="opp-hp-bar" class="hp-bar-inner"></div></div>
+<div class="hp-text" id="opp-hp-text">--/--</div>
+</div>
+<div class="status-box player">
+<div class="pokemon-info"><span id="player-pkmn-name">내 포켓몬</span><span id="player-level">Lv.?</span></div>
+<div class="hp-bar-outer"><div id="player-hp-bar" class="hp-bar-inner"></div></div>
+<div class="hp-text" id="player-hp-text">--/--</div>
+</div>
+</div>
+<div id="info">🎒 아이템: 준비 중</div>
+<div id="log-box">이름을 입력하고 모험을 시작하세요!</div>
+<div id="save-status">💾 저장 데이터 확인 중...</div>
+<div class="save-controls">
+<button onclick="manualSave()">💾 수동 저장</button>
+<button onclick="resetSave()">🗑️ 세이브 리셋</button>
+</div>
+<div class="small">전국도감 1~1025 지원 · 전 세대 기술 연동 · 100층마다 전설 포켓몬 보스</div>
+<div id="controls">
+<div id="setup-name" class="btn-grid">
+<input id="player-name-input" class="full" maxlength="10" placeholder="주인공 이름 (기본값: 카이)">
+<button class="full" onclick="submitName()">모험 시작</button>
+</div>
+<div id="setup-starter" class="btn-grid hidden">
+<button onclick="selectStarter(1)">이상해씨 🌱</button>
+<button onclick="selectStarter(4)">파이리 🔥</button>
+<button onclick="selectStarter(7)">꼬부기 💧</button>
+<button onclick="selectStarter(25)">피카츄 ⚡</button>
+</div>
+<div id="action-menu" class="btn-grid hidden">
+<button onclick="showMoveMenu()">⚔️ 싸운다</button>
+<button onclick="catchPokemon()">🎯 포획하기</button>
+<button onclick="useItem()">🎒 아이템</button>
+<button onclick="showParty()">📋 포켓몬 목록</button>
+<button class="full" onclick="runAway()">🏃 도망치기</button>
+</div>
+<div id="move-menu" class="btn-grid hidden">
+<button id="move-btn-0" onclick="playerAttack(0)">-</button>
+<button id="move-btn-1" onclick="playerAttack(1)">-</button>
+<button id="move-btn-2" onclick="playerAttack(2)">-</button>
+<button id="move-btn-3" onclick="playerAttack(3)">-</button>
+<button class="full" onclick="showSection('action-menu')">뒤로</button>
+</div>
+<div id="restart-menu" class="btn-grid hidden">
+<button class="full" onclick="restartGame()">다시 도전하기</button>
+</div>
+</div>
+</div>
+<script>
+/*
+ * 전국도감 1~1025 데이터: PokeAPI에서 한국어 이름/타입/종족값/전설 여부/학습 가능 기술을 가져옵니다.
+ * 각 포켓몬의 본인 타입과 일치하는 기술만 배정되도록 필터링합니다.
+ */
+var API="https://pokeapi.co/api/v2/";
+var SAVE_KEY="pokemon_roguelike_save_v3";
+var CACHE_KEY="pokemon_roguelike_pokedex_cache_v3";
+var MOVE_CACHE_KEY="pokemon_roguelike_move_cache_v2";
+var TYPE_KO={normal:"노말",fire:"불꽃",water:"물",electric:"전기",grass:"풀",ice:"얼음",fighting:"격투",poison:"독",ground:"땅",flying:"비행",psychic:"에스퍼",bug:"벌레",rock:"바위",ghost:"고스트",dragon:"드래곤",dark:"악",steel:"강철",fairy:"페어리"};
+var TYPE_CHART={
+"노말":{"바위":0.5,"고스트":0,"강철":0.5},
+"불꽃":{"불꽃":0.5,"물":0.5,"풀":2,"얼음":2,"벌레":2,"바위":0.5,"드래곤":0.5,"강철":2},
+"물":{"불꽃":2,"물":0.5,"풀":0.5,"전기":0.5,"땅":2,"바위":2,"드래곤":0.5},
+"풀":{"불꽃":0.5,"물":2,"풀":0.5,"독":0.5,"비행":0.5,"벌레":0.5,"땅":2,"바위":2,"드래곤":0.5,"강철":0.5},
+"전기":{"물":2,"풀":0.5,"전기":0.5,"땅":0,"비행":2,"드래곤":0.5},
+"얼음":{"불꽃":0.5,"물":0.5,"풀":2,"얼음":0.5,"땅":2,"비행":2,"드래곤":2},
+"격투":{"노말":2,"얼음":2,"독":0.5,"비행":0.5,"에스퍼":0.5,"벌레":0.5,"바위":2,"고스트":0,"악":2,"강철":2,"페어리":0.5},
+"독":{"풀":2,"독":0.5,"땅":0.5,"바위":0.5,"고스트":0.5,"강철":0,"페어리":2},
+"땅":{"불꽃":2,"전기":2,"풀":0.5,"독":2,"벌레":0.5,"비행":0,"바위":2,"강철":2},
+"비행":{"전기":0.5,"풀":2,"격투":2,"벌레":2,"바위":0.5,"강철":0.5},
+"에스퍼":{"격투":2,"독":2,"에스퍼":0.5,"악":0,"강철":0.5},
+"벌레":{"불꽃":0.5,"풀":2,"격투":0.5,"독":0.5,"비행":0.5,"에스퍼":2,"고스트":0.5,"악":2,"강철":0.5,"페어리":0.5},
+"바위":{"불꽃":2,"얼음":2,"격투":0.5,"땅":0.5,"비행":2,"벌레":2,"강철":0.5},
+"고스트":{"노말":0,"에스퍼":2,"고스트":2,"악":0.5},
+"드래곤":{"드래곤":2,"강철":0.5,"페어리":0},
+"악":{"격투":0.5,"에스퍼":2,"고스트":2,"악":0.5,"페어리":0.5},
+"강철":{"불꽃":0.5,"물":0.5,"전기":0.5,"얼음":2,"바위":2,"강철":0.5,"페어리":2},
+"페어리":{"불꽃":0.5,"격투":2,"독":0.5,"드래곤":2,"악":2,"강철":0.5}
+};
+var MOVES={
+"몸통박치기":["노말",40],"전광석화":["노말",40],"베어가르기":["노말",70],"은밀기습":["노말",40],"스피드스타":["노말",60],"기사회생":["노말",80],"바디프레스":["노말",80],"파괴광선":["노말",150],"기가임팩트":["노말",150],"폭발펀치":["노말",100],
+"불꽃세례":["불꽃",40],"니트로차지":["불꽃",50],"불꽃엄니":["불꽃",65],"화염방사":["불꽃",90],"열풍":["불꽃",95],"플레어드라이브":["불꽃",120],"오버히트":["불꽃",130],"불대문자":["불꽃",110],"블래스트번":["불꽃",150],"V제너레이트":["불꽃",180],
+"물대포":["물",40],"아쿠아제트":["물",40],"소용돌이":["물",35],"거품광선":["물",65],"탁류":["물",90],"열탕":["물",80],"아쿠아테일":["물",90],"하이드로펌프":["물",110],"파도타기":["물",90],"하이드로캐논":["물",150],"물수리검":["물",75],
+"덩굴채찍":["풀",45],"잎날가르기":["풀",55],"씨기관총":["풀",25],"에너지볼":["풀",90],"리프스톰":["풀",130],"솔라빔":["풀",120],"우드해머":["풀",120],"그래스필드공격":["풀",70],"하드플랜트":["풀",150],"솔라블레이드":["풀",125],
+"전기쇼크":["전기",40],"볼트태클":["전기",120],"방전":["전기",80],"10만볼트":["전기",90],"번개":["전기",110],"볼트체인지":["전기",70],"플라스마샤워":["전기",100],"오버드라이브":["전기",80],"번개펀치":["전기",75],"전자포":["전기",120],
+"눈보라":["얼음",110],"얼음뭉치":["얼음",40],"얼음엄니":["얼음",65],"냉동빔":["얼음",90],"고드름떨구기":["얼음",85],"아이스해머":["얼음",100],"빙산가르기":["얼음",120],"냉동펀치":["얼음",75],"프리즈드라이":["얼음",70],"서리바람":["얼음",55],
+"안다리걸기":["격투",50],"깨뜨리기":["격투",75],"인파이트":["격투",120],"드레인펀치":["격투",75],"파동탄":["격투",80],"지옥바퀴":["격투",80],"무릎차기":["격투",85],"암해머":["격투",100],"기합구슬":["격투",120],"아쿠아스텝":["격투",80],
+"독찌르기":["독",80],"오물폭탄":["독",90],"오물웨이브":["독",95],"더스트슈트":["독",120],"크로스포이즌":["독",70],"애시드봄":["독",40],"베놈쇼크":["독",65],"독액충격":["독",50],"스모그":["독",30],"이화접목":["독",90],
+"머드샷":["땅",55],"땅고르기":["땅",60],"지진":["땅",100],"대지의힘":["땅",90],"10만마력":["땅",95],"드릴라이너":["땅",80],"모래지옥":["땅",35],"단애의칼":["땅",120],"천둥의우리":["땅",100],"진흙폭탄":["땅",65],
+"바람일으키기":["비행",40],"제비반환":["비행",60],"공중제비":["비행",75],"폭풍":["비행",110],"브레이브버드":["비행",120],"에어슬래시":["비행",75],"아크로뱃":["비행",55],"플라이":["비행",90],"제트펀치":["비행",60],"화룡점정":["비행",120],
+"염동력":["에스퍼",50],"사이코커터":["에스퍼",70],"사이코키네시스":["에스퍼",90],"미래예지":["에스퍼",120],"사이코쇼크":["에스퍼",80],"어시스트파워":["에스퍼",60],"트릭룸공격":["에스퍼",75],"프리즘레이저":["에스퍼",160],"광자분출":["에스퍼",100],"트윈빔":["에스퍼",40],
+"벌레먹기":["벌레",40],"시그널빔":["벌레",75],"벌레의저항":["벌레",50],"유턴":["벌레",70],"메가혼":["벌레",120],"흡혈":["벌레",80],"시저크로스":["벌레",80],"벌레의야단법석":["벌레",90],"공격지령":["벌레",90],"첫인상":["벌레",90],
+"구르기":["바위",50],"암석봉인":["바위",60],"스톤샤워":["바위",75],"파워젬":["바위",80],"스톤에지":["바위",100],"락블래스트":["바위",25],"모래바람타격":["바위",70],"운석충돌":["바위",150],"암석포":["바위",150],"다이아스톰":["바위",100],
+"놀래키기":["고스트",30],"섀도펀치":["고스트",60],"섀도볼":["고스트",80],"섀도크루":["고스트",70],"고스트다이브":["고스트",90],"원혼의울부짖음":["고스트",65],"병상첨병":["고스트",65],"야습":["고스트",70],"명계의문":["고스트",90],"분노의주먹":["고스트",50],
+"용의숨결":["드래곤",60],"드래곤크루":["드래곤",80],"용의파동":["드래곤",85],"역린":["드래곤",120],"용성군":["드래곤",130],"드래곤테일":["드래곤",60],"쌍격":["드래곤",40],"스케일샷":["드래곤",25],"파멸의빛":["드래곤",140],"시간의포효":["드래곤",150],
+"물기":["악",60],"깨물어부수기":["악",80],"악의파동":["악",80],"부딪치기":["악",70],"기습":["악",70],"탁쳐서떨구기":["악",65],"돈크로우":["악",80],"암흑강타":["악",100],"사악의파동":["악",85],"짓궂은손타격":["악",75],
+"메탈클로":["강철",50],"아이언헤드":["강철",80],"아이언테일":["강철",100],"러스터캐논":["강철",80],"코멧펀치":["강철",90],"자이로볼":["강철",80],"헤비봄버":["강철",80],"강철날개":["강철",70],"철벽타격":["강철",85],"강철의빔":["강철",140],
+"요정의바람":["페어리",40],"치근거리기":["페어리",90],"문포스":["페어리",95],"매지컬샤인":["페어리",80],"드레인키스":["페어리",50],"반짝반짝":["페어리",70],"자연의분노":["페어리",90],"플라워가드":["페어리",90],"요정의일격":["페어리",85],"빛의파멸":["페어리",140]
+};
+var TYPE_MOVES={
+"노말":["몸통박치기","전광석화","베어가르기","스피드스타","파괴광선"],
+"불꽃":["불꽃세례","니트로차지","화염방사","플레어드라이브","불대문자"],
+"물":["물대포","아쿠아제트","파도타기","열탕","하이드로펌프"],
+"풀":["덩굴채찍","잎날가르기","에너지볼","솔라빔","리프스톰"],
+"전기":["전기쇼크","볼트태클","방전","10만볼트","번개"],
+"얼음":["얼음뭉치","냉동빔","고드름떨구기","아이스해머","눈보라"],
+"격투":["안다리걸기","깨뜨리기","파동탄","드레인펀치","인파이트"],
+"독":["독찌르기","오물폭탄","크로스포이즌","베놈쇼크","오물웨이브"],
+"땅":["머드샷","땅고르기","대지의힘","10만마력","지진"],
+"비행":["바람일으키기","제비반환","에어슬래시","공중제비","브레이브버드"],
+"에스퍼":["염동력","사이코커터","사이코쇼크","사이코키네시스","미래예지"],
+"벌레":["벌레먹기","유턴","시저크로스","벌레의야단법석","메가혼"],
+"바위":["구르기","암석봉인","파워젬","스톤샤워","스톤에지"],
+"고스트":["놀래키기","섀도펀치","섀도크루","섀도볼","고스트다이브"],
+"드래곤":["용의숨결","드래곤크루","용의파동","역린","용성군"],
+"악":["물기","깨물어부수기","기습","악의파동","탁쳐서떨구기"],
+"강철":["메탈클로","강철날개","러스터캐논","아이언헤드","아이언테일"],
+"페어리":["요정의바람","드레인키스","매지컬샤인","치근거리기","문포스"]
+};
+var TYPE_MOVE={
+"노말":"몸통박치기","불꽃":"불꽃세례","물":"물대포","풀":"덩굴채찍","전기":"전기쇼크",
+"얼음":"얼음뭉치","격투":"안다리걸기","독":"독찌르기","땅":"머드샷","비행":"바람일으키기",
+"에스퍼":"염동력","벌레":"벌레먹기","바위":"구르기","고스트":"놀래키기","드래곤":"용의숨결",
+"악":"물기","강철":"메탈클로","페어리":"요정의바람"
+};
+var dexCache={};
+var moveCache={};
+var legendaryIds=[144,145,146,150,243,244,245,249,250,377,378,379,380,381,382,383,384,480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,716,717,718,772,773,785,786,787,788,789,790,791,792,800,888,889,890,898,905,1001,1002,1003,1004,1007,1008,1014,1015,1016,1017,1024];
+var playerName="카이",playerPkmn=null,oppPkmn=null,caughtPokemon=[],floor=1,isProcessing=false,gameEnded=false;
+var inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
+var itemNames=["상처약","좋은상처약","이상한사탕","몬스터볼","슈퍼볼","하이퍼볼","마스터볼"];
+
+function log(msg){var b=document.getElementById("log-box");b.innerText=msg;b.scrollTop=b.scrollHeight;}
+function delay(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function showSection(id){["setup-name","setup-starter","action-menu","move-menu","restart-menu"].forEach(function(s){document.getElementById(s).classList.add("hidden");});if(id)document.getElementById(id).classList.remove("hidden");}
+function getHpColor(p){return p>50?"#4caf50":p>20?"#ff9800":"#f44336";}
+function updateSaveStatus(s){document.getElementById("save-status").innerText=s;}
+function readCache(){
+try{dexCache=JSON.parse(localStorage.getItem(CACHE_KEY)||"{}")||{};}catch(e){dexCache={};}
+try{moveCache=JSON.parse(localStorage.getItem(MOVE_CACHE_KEY)||"{}")||{};}catch(e){moveCache={};}
+}
+function writeCache(){
+try{localStorage.setItem(CACHE_KEY,JSON.stringify(dexCache));}catch(e){}
+try{localStorage.setItem(MOVE_CACHE_KEY,JSON.stringify(moveCache));}catch(e){}
+}
+async function fetchJson(url){var r=await fetch(url);if(!r.ok)throw new Error("데이터 요청 실패 "+r.status);return await r.json();}
+
+async function resolveMoveInfo(apiMove){
+var key=apiMove.move.name;
+if(moveCache[key])return moveCache[key];
+try{
+var mData=await fetchJson(apiMove.move.url);
+if(typeof mData.power!=="number"||mData.power<=0){
+moveCache[key]=null;
+return null;
+}
+var koNameObj=mData.names.find(function(n){return n.language.name==="ko";});
+var koName=koNameObj?koNameObj.name:key;
+var koType=TYPE_KO[mData.type&&mData.type.name]||"노말";
+var info={name:koName,type:koType,power:mData.power};
+moveCache[key]=info;
+return info;
+}catch(e){return null;}
+}
+
+async function extractLearnedMoves(rawMoves,allowedTypes){
+var result={};
+if(!Array.isArray(rawMoves)||!rawMoves.length)return result;
+var candidates=rawMoves.slice().sort(function(){return Math.random()-0.5;});
+var checked=0;
+for(var i=0;i<candidates.length&&checked<45;i++){
+var info=await resolveMoveInfo(candidates[i]);
+checked++;
+if(!info||!info.name)continue;
+if(allowedTypes.indexOf(info.type)<0)continue;
+if(!result[info.name]){
+MOVES[info.name]=[info.type,info.power];
+result[info.name]=[info.type,info.power];
+}
+if(Object.keys(result).length>=4)break;
+}
+writeCache();
+return result;
+}
+
+async function getPokemonData(id){
+id=Number(id);if(id<1||id>1025)throw new Error("도감 번호 오류");
+if(dexCache[id])return dexCache[id];
+var raw=await fetchJson(API+"pokemon/"+id);
+var species=await fetchJson(API+"pokemon-species/"+id);
+var korean=species.names.find(function(n){return n.language.name==="ko";});
+var types=raw.types.sort(function(a,b){return a.slot-b.slot;}).map(function(t){return TYPE_KO[t.type.name]||"노말";});
+var type1=types[0]||"노말",type2=types[1]||null;
+var allowedTypes=type2?[type1,type2]:[type1];
+var stats={};raw.stats.forEach(function(s){stats[s.stat.name]=s.base_stat;});
+var learnedMoves=await extractLearnedMoves(raw.moves,allowedTypes);
+var data={dexNo:id,name:korean?korean.name:(raw.name),type1:type1,type2:type2,hp:stats.hp||50,attack:stats.attack||50,defense:stats.defense||50,legendary:!!species.is_legendary,mythical:!!species.is_mythical,learnedMoves:learnedMoves};
+dexCache[id]=data;writeCache();return data;
+}
+
+class Pokemon{
+constructor(data,level){this.dexNo=data.dexNo;this.name=data.name;this.type1=data.type1;this.type2=data.type2;this.level=level||10;this.maxHp=Math.floor(data.hp*2*this.level/100)+this.level+10;this.hp=this.maxHp;this.attack=Math.floor(data.attack*2*this.level/100)+5;this.defense=Math.floor(data.defense*2*this.level/100)+5;this.legendary=!!data.legendary;this.mythical=!!data.mythical;this.learnedMoves=data.learnedMoves||{};this.moves=this.assignMoves();}
+assignMoves(){
+var a={};
+var allowedTypes=this.type2?[this.type1,this.type2]:[this.type1];
+var self=this;
+Object.keys(this.learnedMoves).forEach(function(n){
+var m=self.learnedMoves[n];
+if(m&&allowedTypes.indexOf(m[0])>=0&&Object.keys(a).length<4){
+a[n]=m;
+}
+});
+allowedTypes.forEach(function(t){
+var pool=TYPE_MOVES[t]||[];
+pool.forEach(function(n){
+if(Object.keys(a).length<4&&MOVES[n]&&allowedTypes.indexOf(MOVES[n][0])>=0&&!a[n]){
+a[n]=MOVES[n];
+}
+});
+});
+allowedTypes.forEach(function(t){
+var n=TYPE_MOVE[t];
+if(n&&MOVES[n]&&Object.keys(a).length<4&&!a[n])a[n]=MOVES[n];
+});
+if(!Object.keys(a).length){a["몸통박치기"]=MOVES["몸통박치기"];}
+return a;
+}
+isFainted(){return this.hp<=0;}
+}
+
+function serializePokemon(p){if(!p)return null;return {dexNo:p.dexNo,level:p.level,hp:p.hp,maxHp:p.maxHp,attack:p.attack,defense:p.defense,moves:p.moves,legendary:p.legendary,mythical:p.mythical};}
+
+async function restorePokemon(d){
+if(!d)return null;
+var base=await getPokemonData(d.dexNo);
+var p=new Pokemon(base,Math.max(1,Math.min(100,Number(d.level)||1)));
+p.maxHp=Math.max(1,Number(d.maxHp)||p.maxHp);
+p.hp=Math.max(0,Math.min(p.maxHp,Number(d.hp)||0));
+p.attack=Math.max(1,Number(d.attack)||p.attack);
+p.defense=Math.max(1,Number(d.defense)||p.defense);
+if(d.moves){
+var allowedTypes=p.type2?[p.type1,p.type2]:[p.type1];
+var cleanMoves={};
+Object.keys(d.moves).forEach(function(k){
+var mv=d.moves[k];
+if(mv&&allowedTypes.indexOf(mv[0])>=0)cleanMoves[k]=mv;
+});
+if(Object.keys(cleanMoves).length)p.moves=cleanMoves;
+}
+p.legendary=!!base.legendary;
+p.mythical=!!base.mythical;
+return p;
+}
+
+function saveGame(){
+try{
+if(!playerPkmn)return false;
+var data={version:3,playerName:playerName,floor:floor,playerPkmn:serializePokemon(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,savedAt:Date.now()};
+localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+updateSaveStatus("💾 자동 저장 완료 · "+new Date().toLocaleTimeString());
+return true;
+}catch(e){updateSaveStatus("⚠️ 저장 실패");return false;}
+}
+
+async function loadGame(){
+try{
+var raw=localStorage.getItem(SAVE_KEY);
+if(!raw)return false;
+var d=JSON.parse(raw);
+if(!d||!d.playerPkmn)return false;
+playerName=String(d.playerName||"카이").slice(0,10);
+floor=Math.max(1,Math.floor(Number(d.floor)||1));
+playerPkmn=await restorePokemon(d.playerPkmn);
+oppPkmn=await restorePokemon(d.oppPkmn);
+caughtPokemon=[];
+for(var i=0;i<(d.caughtPokemon||[]).length;i++){var p=await restorePokemon(d.caughtPokemon[i]);if(p)caughtPokemon.push(p);}
+if(!caughtPokemon.length)caughtPokemon=[playerPkmn];
+inventory={};
+itemNames.forEach(function(n){var v=Number(d.inventory&&d.inventory[n]);inventory[n]=Number.isFinite(v)?Math.max(0,Math.floor(v)):0;});
+gameEnded=!!d.gameEnded;
+isProcessing=false;
+return true;
+}catch(e){console.error(e);return false;}
+}
+
+function manualSave(){
+if(!playerPkmn){log("저장할 게임 데이터가 없습니다!");return;}
+if(saveGame())log("💾 저장 완료!\n현재 진행 상황이 저장되었습니다.");
+}
+
+function resetSave(){
+if(!confirm("정말 세이브를 초기화할까요? 모든 진행 상황이 삭제됩니다!"))return;
+localStorage.removeItem(SAVE_KEY);
+playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];floor=1;isProcessing=false;gameEnded=false;
+inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
+document.getElementById("player-name-input").value="";
+document.getElementById("floor-display").innerText="🏰 준비 중";
+document.getElementById("opp-name").innerText="야생 포켓몬";
+document.getElementById("opp-level").innerText="Lv.?";
+document.getElementById("opp-hp-text").innerText="--/--";
+document.getElementById("player-pkmn-name").innerText="내 포켓몬";
+document.getElementById("player-level").innerText="Lv.?";
+document.getElementById("player-hp-text").innerText="--/--";
+document.getElementById("opp-hp-bar").style.width="100%";
+document.getElementById("player-hp-bar").style.width="100%";
+updateInfo();showSection("setup-name");
+log("🗑️ 세이브가 초기화되었습니다!\n새로운 모험을 시작하세요.");
+updateSaveStatus("세이브 데이터 없음");
+}
+
+function updateInfo(){
+var s="🎒 ";
+itemNames.forEach(function(n){s+=n+" "+inventory[n]+"개  ";});
+document.getElementById("info").innerText=s;
+}
+
+function updateStatus(){
+if(!playerPkmn||!oppPkmn)return;
+document.getElementById("player-pkmn-name").innerText=playerPkmn.name;
+document.getElementById("player-level").innerText="Lv."+playerPkmn.level;
+document.getElementById("player-hp-text").innerText=playerPkmn.hp+"/"+playerPkmn.maxHp;
+var p=playerPkmn.hp/playerPkmn.maxHp*100;
+document.getElementById("player-hp-bar").style.width=p+"%";
+document.getElementById("player-hp-bar").style.backgroundColor=getHpColor(p);
+document.getElementById("opp-name").innerText=(oppPkmn.legendary?"⭐ ":"")+oppPkmn.name;
+document.getElementById("opp-level").innerText="Lv."+oppPkmn.level+(oppPkmn.legendary?" 전설":"");
+document.getElementById("opp-hp-text").innerText=oppPkmn.hp+"/"+oppPkmn.maxHp;
+var o=oppPkmn.hp/oppPkmn.maxHp*100;
+document.getElementById("opp-hp-bar").style.width=o+"%";
+document.getElementById("opp-hp-bar").style.backgroundColor=getHpColor(o);
+updateInfo();
+}
+
+function submitName(){
+var n=document.getElementById("player-name-input").value.trim();
+if(n)playerName=n;
+log("반갑습니다, "+playerName+"!\n파트너 포켓몬을 선택하세요!");
+showSection("setup-starter");
+}
+
+async function selectStarter(id){
+try{
+showSection(null);
+log("📡 포켓몬 도감 데이터를 불러오는 중...");
+var d=await getPokemonData(id);
+playerPkmn=new Pokemon(d,15);
+caughtPokemon=[playerPkmn];
+floor=1;gameEnded=false;
+await startFloor();
+}catch(e){
+log("데이터를 불러오지 못했습니다.\n인터넷 연결을 확인한 뒤 다시 시도하세요.");
+showSection("setup-starter");
+}
+}
+
+async function pickWildData(){
+if(floor%100===0){
+var ids=legendaryIds.slice().sort(function(){return Math.random()-0.5;});
+for(var i=0;i<ids.length;i++){
+try{var d=await getPokemonData(ids[i]);if(d.legendary)return d;}catch(e){}
+}
+throw new Error("전설 포켓몬 데이터를 불러오지 못했습니다.");
+}
+return await getPokemonData(Math.floor(Math.random()*1025)+1);
+}
+
+async function startFloor(){
+if(!playerPkmn)return;
+try{
+var d=await pickWildData();
+var lv=Math.max(5,Math.min(100,8+Math.floor(floor*.7)+Math.floor(Math.random()*4)));
+if(floor%100===0)lv=Math.min(100,Math.max(lv,Math.floor(floor*.8)));
+oppPkmn=new Pokemon(d,lv);
+document.getElementById("floor-display").innerText="🏰 "+floor+"층"+(floor%100===0?" · ⭐ 전설 보스":"");
+updateStatus();
+log("🏰 "+floor+"층 도착!\n"+(oppPkmn.legendary?"⭐ 전설의 ":"야생의 ")+oppPkmn.name+" Lv."+oppPkmn.level+" 등장!\n가라! "+playerPkmn.name+"!");
+showSection("action-menu");
+saveGame();
+}catch(e){
+console.error(e);
+log("포켓몬 데이터를 불러오지 못했습니다.\n인터넷 연결을 확인하고 새로고침해 주세요.");
+showSection("action-menu");
+}
+}
+
+function giveFloorReward(){
+var a=[["상처약",3],["좋은상처약",2],["이상한사탕",2],["몬스터볼",5],["슈퍼볼",3],["하이퍼볼",2],["마스터볼",1]];
+var r=a[Math.floor(Math.random()*a.length)];
+inventory[r[0]]+=r[1];
+updateInfo();
+return r[0]+" × "+r[1];
+}
+
+function clearFloor(){
+if(isProcessing)return;
+isProcessing=true;
+var reward="";
+if(floor%5===0)reward="\n🎁 보상: "+giveFloorReward();
+log("🏆 "+floor+"층 클리어!"+reward+"\n다음 층으로 이동합니다!");
+oppPkmn=null;
+saveGame();
+setTimeout(function(){floor++;isProcessing=false;startFloor();},1200);
+}
+
+function showMoveMenu(){
+var keys=Object.keys(playerPkmn.moves);
+for(var i=0;i<4;i++){
+var b=document.getElementById("move-btn-"+i);
+if(i<keys.length){
+var n=keys[i],d=playerPkmn.moves[n];
+b.innerText=n+"\n["+d[0]+"] 위력 "+d[1];
+b.disabled=false;
+}else{
+b.innerText="-";
+b.disabled=true;
+}
+}
+showSection("move-menu");
+}
+
+function typeEffect(mt,def){
+var c=TYPE_CHART[mt]||{},e=1;
+if(c[def.type1]!==undefined)e*=c[def.type1];
+if(def.type2&&c[def.type2]!==undefined)e*=c[def.type2];
+return e;
+}
+
+function calculateDamage(a,d,n){
+var m=a.moves[n],stab=(m[0]===a.type1||m[0]===a.type2)?1.5:1,e=typeEffect(m[0],d),crit=Math.random()<.07,lv=2*a.level/5+2,base=lv*m[1]*(a.attack/Math.max(1,d.defense))/50+2,diff=a===oppPkmn?.5:1.2;
+return {damage:Math.max(1,Math.floor(base*stab*e*(crit?1.5:1)*(.9+Math.random()*.1)*diff)),typeEff:e,critical:crit};
+}
+
+async function executeAttack(a,d,n,isPlayer){
+log("▶ "+(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!");
+await delay(350);
+var r=calculateDamage(a,d,n);
+d.hp=Math.max(0,d.hp-r.damage);
+var s=(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!\n";
+if(r.typeEff>=2)s+="효과는 굉장했다!\n";
+else if(r.typeEff>0&&r.typeEff<=.5)s+="효과는 별로인 듯하다...\n";
+else if(r.typeEff===0)s+="효과가 없는 듯하다!\n";
+if(r.critical)s+="급소에 맞았다!\n";
+s+=d.name+"에게 "+r.damage+" 데미지!";
+log(s);updateStatus();saveGame();
+await delay(500);
+}
+
+async function playerAttack(i){
+if(isProcessing||gameEnded||!oppPkmn)return;
+isProcessing=true;showSection(null);
+var keys=Object.keys(playerPkmn.moves),n=keys[i];
+if(!n){isProcessing=false;showSection("action-menu");return;}
+await executeAttack(playerPkmn,oppPkmn,n,true);
+if(oppPkmn.isFainted()){
+log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!");
+isProcessing=false;clearFloor();return;
+}
+var ek=Object.keys(oppPkmn.moves),en=ek[Math.floor(Math.random()*ek.length)];
+await executeAttack(oppPkmn,playerPkmn,en,false);
+if(playerPkmn.isFainted()){gameOver();return;}
+isProcessing=false;showSection("action-menu");
+log("무엇을 할까요?");
+saveGame();
+}
+
+async function catchPokemon(){
+if(isProcessing||gameEnded||!oppPkmn)return;
+isProcessing=true;showSection(null);
+var bs=[["마스터볼",999],["하이퍼볼",2.5],["슈퍼볼",1.6],["몬스터볼",1]],ball="",mult=1;
+for(var i=0;i<bs.length;i++){if(inventory[bs[i][0]]>0){ball=bs[i][0];mult=bs[i][1];break;}}
+if(!ball){log("포켓몬볼이 없습니다!");isProcessing=false;showSection("action-menu");return;}
+inventory[ball]--;updateInfo();saveGame();
+log("🎯 "+ball+"을(를) 던졌다!");
+await delay(600);
+var chance=Math.min(1,(.35+(1-oppPkmn.hp/oppPkmn.maxHp)*.5)*mult*(oppPkmn.legendary?.45:1));
+if(Math.random()<chance){
+caughtPokemon.push(oppPkmn);
+playerPkmn.hp=playerPkmn.maxHp;
+updateStatus();
+log("🎉 포획 성공!\n"+oppPkmn.name+"을(를) 잡았다!\n❤️ 출전 포켓몬 HP 완전 회복!\n보유: "+caughtPokemon.length+"마리");
+saveGame();
+await delay(900);
+isProcessing=false;
+clearFloor();
+}else{
+log("포획 실패! "+oppPkmn.name+"이(가) 볼에서 나왔다!");
+await delay(500);
+var ks=Object.keys(oppPkmn.moves),m=ks[Math.floor(Math.random()*ks.length)];
+await executeAttack(oppPkmn,playerPkmn,m,false);
+if(playerPkmn.isFainted()){gameOver();return;}
+isProcessing=false;showSection("action-menu");saveGame();
+}
+}
+
+function useItem(){
+var s="🎒 아이템 목록\n\n";
+itemNames.forEach(function(n,i){s+=(i+1)+". "+n+" × "+inventory[n]+"\n";});
+var c=prompt(s+"\n사용할 아이템 번호를 입력하세요.");
+if(c===null)return;
+var i=parseInt(c)-1;
+if(i<0||i>=itemNames.length||isNaN(i)){log("잘못된 선택입니다.");return;}
+var n=itemNames[i];
+if(inventory[n]<=0){log(n+"이(가) 없습니다!");return;}
+if(n==="상처약"||n==="좋은상처약"){
+if(playerPkmn.hp>=playerPkmn.maxHp){log("HP가 이미 가득 찼습니다!");return;}
+inventory[n]--;
+var before=playerPkmn.hp;
+playerPkmn.hp=Math.min(playerPkmn.maxHp,playerPkmn.hp+(n==="상처약"?50:100));
+updateStatus();
+log("💊 "+n+" 사용!\nHP "+(playerPkmn.hp-before)+" 회복!");
+saveGame();
+return;
+}
+if(n==="이상한사탕"){
+inventory[n]--;
+playerPkmn.level++;
+playerPkmn.maxHp+=2;
+playerPkmn.attack+=2;
+playerPkmn.defense+=2;
+playerPkmn.hp=playerPkmn.maxHp;
+updateStatus();
+log("🍬 이상한사탕 사용!\n"+playerPkmn.name+" Lv."+playerPkmn.level+"!");
+saveGame();
+return;
+}
+log("포획용 볼은 포획하기 버튼을 누르면 자동으로 사용됩니다.");
+}
+
+function showParty(){
+var s="📋 포켓몬 보유 목록\n━━━━━━━━━━━━\n";
+caughtPokemon.forEach(function(p,i){s+=(i+1)+". "+(p.legendary?"⭐ ":"")+p.name+" Lv."+p.level+"\n   HP "+p.hp+"/"+p.maxHp+"\n";});
+s+="━━━━━━━━━━━━\n현재 출전: "+playerPkmn.name;
+log(s);
+}
+
+function runAway(){
+if(isProcessing||gameEnded)return;
+isProcessing=true;
+floor=Math.max(1,floor-1);
+log("🏃 무사히 도망쳤습니다!\n한 층 내려갑니다!");
+oppPkmn=null;
+saveGame();
+setTimeout(function(){isProcessing=false;startFloor();},800);
+}
+
+function gameOver(){
+isProcessing=false;gameEnded=true;
+log("💀 "+playerPkmn.name+"이(가) 쓰러졌습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
+showSection("restart-menu");
+saveGame();
+}
+
+function restartGame(){
+if(!playerPkmn){showSection("setup-starter");return;}
+floor=1;playerPkmn.hp=playerPkmn.maxHp;oppPkmn=null;gameEnded=false;isProcessing=false;
+log("🔄 새로운 도전을 시작합니다!\n파트너 포켓몬이 회복되었습니다.");
+startFloor();
+}
+
+async function initializeGame(){
+readCache();
+var ok=await loadGame();
+if(ok){
+document.getElementById("floor-display").innerText="🏰 "+floor+"층";
+updateInfo();
+if(gameEnded){
+log("💀 저장된 도전 기록을 불러왔습니다.");
+showSection("restart-menu");
+}else if(oppPkmn){
+updateStatus();
+log("💾 저장된 모험을 불러왔습니다!\n"+floor+"층에서 이어서 시작합니다.\n야생의 "+oppPkmn.name+"이(가) 기다리고 있습니다!");
+showSection("action-menu");
+}else{
+await startFloor();
+}
+updateSaveStatus("💾 저장 데이터 자동 불러오기 완료");
+}else{
+showSection("setup-name");
+updateInfo();
+log("이름을 입력하고 모험을 시작하세요!");
+updateSaveStatus("새로운 모험을 시작할 수 있습니다.");
+}
+}
+
+window.addEventListener("load",initializeGame);
+window.addEventListener("beforeunload",saveGame);
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")saveGame();});
+window.addEventListener("pagehide",saveGame);
+window.addEventListener("pageshow",updateInfo);
+</script>
+</body>
+</html>
