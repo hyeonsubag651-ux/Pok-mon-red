@@ -1039,7 +1039,44 @@ if(egg.armed||Date.now()<egg.blockUntil){e.stopPropagation();e.preventDefault();
 },true);
 document.addEventListener("contextmenu",function(e){if(egg.armed||egg.holdTimer)e.preventDefault();});
 
+/* ===== 레드 배틀 브금 =====
+   레드 배틀 중 화면/버튼을 한 번 터치하면 1번 곡 재생 → 끝났는데도 배틀 중이면 2번 곡 → 이후 번갈아 반복.
+   레드 배틀이 끝나거나 게임오버/리셋되면 자동 정지. */
+var BGM_SRC=["red_battle_1.mp3","red_battle_2.mp3"];
+var bgmEls=[],bgmOn=false,bgmIdx=0,bgmBusy=false;
+function bgmInit(){
+BGM_SRC.forEach(function(s,i){
+var a=new Audio();a.preload="auto";a.volume=0.6;a.src=s;
+a.addEventListener("ended",function(){bgmNext(i);});
+bgmEls.push(a);
+});
+}
+function bgmNext(i){
+if(!isRed||!bgmOn)return;
+bgmIdx=(i+1)%bgmEls.length;
+var n=bgmEls[bgmIdx];n.currentTime=0;
+var p=n.play();if(p&&p.catch)p.catch(function(){bgmOn=false;});
+}
+function bgmTry(){
+if(!isRed||bgmOn||bgmBusy||!bgmEls.length)return;
+bgmBusy=true;bgmIdx=0;
+var a=bgmEls[0];a.currentTime=0;
+var p=a.play();
+if(p&&p.then){p.then(function(){bgmOn=true;bgmBusy=false;}).catch(function(){bgmOn=false;bgmBusy=false;});}
+else{bgmOn=true;bgmBusy=false;}
+}
+function bgmStop(){bgmOn=false;bgmEls.forEach(function(a){a.pause();a.currentTime=0;});}
+["pointerdown","touchend","click"].forEach(function(t){document.addEventListener(t,bgmTry,true);});
+setInterval(function(){if(isRed)bgmTry();else if(bgmOn)bgmStop();},500);
+document.addEventListener("visibilitychange",function(){
+if(!bgmOn||!bgmEls.length)return;
+var a=bgmEls[bgmIdx];
+if(document.visibilityState==="hidden")a.pause();
+else if(isRed){var p=a.play();if(p&&p.catch)p.catch(function(){});}
+});
+
 async function initializeGame(){
+bgmInit();
 readCache();
 var ok=await loadGame();
 if(ok){
