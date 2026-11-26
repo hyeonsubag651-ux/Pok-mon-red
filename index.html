@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>포켓몬 로그라이크</title>
+<title>포켓몬스터 레전드 로그라이크</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'DungGeunMo','Courier New',monospace}
 body{background:#202020;color:#101010;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:12px}
@@ -26,10 +26,23 @@ button:active:not(:disabled){transform:translate(1px,1px);box-shadow:none}
 button:disabled{background:#ccc;color:#777;cursor:not-allowed}
 input{width:100%;padding:12px;font-size:1rem;border:3px solid #303030;border-radius:6px}
 .hidden{display:none!important}.full{grid-column:span 2}
+#party-list{display:grid;gap:8px}
 .save-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;background:#ddd}
 .save-controls button{font-size:.85rem;padding:9px 5px}
 #save-status{text-align:center;background:#eee;padding:6px;font-size:.8rem;color:#333}
 .small{font-size:.78rem;color:#555;text-align:center;padding:5px}
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input{-webkit-user-select:text;user-select:text}
+#cheat-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;justify-content:center;align-items:center;z-index:999;padding:16px}
+#cheat-panel{width:100%;max-width:420px;max-height:80vh;background:#f8f8f8;border:4px solid #303030;border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+#cheat-panel h3{background:#303030;color:#fff;text-align:center;padding:12px}
+#cheat-list{padding:12px;overflow-y:auto;display:grid;gap:8px;min-height:80px}
+.cheat-row{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid #303030;border-radius:6px;padding:8px 10px;font-size:.9rem}
+.cheat-row input{width:22px;height:22px;padding:0;flex:none}
+.cheat-row .cheat-name{flex:1;line-height:1.3}
+.cheat-row button{padding:4px 8px;font-size:.8rem;flex:none}
+#cheat-add{margin:0 12px 10px;font-size:1.6rem;padding:4px}
+#cheat-close{margin:0 12px 12px}
 </style>
 </head>
 <body>
@@ -71,7 +84,7 @@ input{width:100%;padding:12px;font-size:1rem;border:3px solid #303030;border-rad
 <button onclick="showMoveMenu()">⚔️ 싸운다</button>
 <button onclick="catchPokemon()">🎯 포획하기</button>
 <button onclick="useItem()">🎒 아이템</button>
-<button onclick="showParty()">📋 포켓몬 목록</button>
+<button onclick="showParty(false)">🔁 포켓몬 교체</button>
 <button class="full" onclick="runAway()">🏃 도망치기</button>
 </div>
 <div id="move-menu" class="btn-grid hidden">
@@ -81,16 +94,24 @@ input{width:100%;padding:12px;font-size:1rem;border:3px solid #303030;border-rad
 <button id="move-btn-3" onclick="playerAttack(3)">-</button>
 <button class="full" onclick="showSection('action-menu')">뒤로</button>
 </div>
-<div id="restart-menu" class="btn-grid hidden">
-<button class="full" onclick="restartGame()">다시 도전하기</button>
+<div id="party-menu" class="hidden">
+<div id="party-list"></div>
+<button id="party-back" class="full" style="width:100%;margin-top:10px" onclick="showSection('action-menu')">뒤로</button>
 </div>
+<div id="restart-menu" class="btn-grid hidden">
+<button class="full" onclick="restartGame()">다시 도전하기 (파티 전원 회복)</button>
+</div>
+</div>
+</div>
+<div id="cheat-overlay" class="hidden">
+<div id="cheat-panel">
+<h3>🛠️ 치트</h3>
+<div id="cheat-list"></div>
+<button id="cheat-add" onclick="addCheat()">+</button>
+<button id="cheat-close" onclick="closeCheat()">닫기</button>
 </div>
 </div>
 <script>
-/*
- * 전국도감 1~1025 데이터: PokeAPI에서 한국어 이름/타입/종족값/전설 여부/학습 가능 기술을 가져옵니다.
- * 각 포켓몬의 본인 타입과 일치하는 기술만 배정되도록 필터링합니다.
- */
 var API="https://pokeapi.co/api/v2/";
 var SAVE_KEY="pokemon_roguelike_save_v3";
 var CACHE_KEY="pokemon_roguelike_pokedex_cache_v3";
@@ -171,7 +192,7 @@ var itemNames=["상처약","좋은상처약","이상한사탕","몬스터볼","�
 
 function log(msg){var b=document.getElementById("log-box");b.innerText=msg;b.scrollTop=b.scrollHeight;}
 function delay(ms){return new Promise(function(r){setTimeout(r,ms);});}
-function showSection(id){["setup-name","setup-starter","action-menu","move-menu","restart-menu"].forEach(function(s){document.getElementById(s).classList.add("hidden");});if(id)document.getElementById(id).classList.remove("hidden");}
+function showSection(id){["setup-name","setup-starter","action-menu","move-menu","party-menu","restart-menu"].forEach(function(s){document.getElementById(s).classList.add("hidden");});if(id)document.getElementById(id).classList.remove("hidden");}
 function getHpColor(p){return p>50?"#4caf50":p>20?"#ff9800":"#f44336";}
 function updateSaveStatus(s){document.getElementById("save-status").innerText=s;}
 function readCache(){
@@ -189,10 +210,7 @@ var key=apiMove.move.name;
 if(moveCache[key])return moveCache[key];
 try{
 var mData=await fetchJson(apiMove.move.url);
-if(typeof mData.power!=="number"||mData.power<=0){
-moveCache[key]=null;
-return null;
-}
+if(typeof mData.power!=="number"||mData.power<=0){moveCache[key]=null;return null;}
 var koNameObj=mData.names.find(function(n){return n.language.name==="ko";});
 var koName=koNameObj?koNameObj.name:key;
 var koType=TYPE_KO[mData.type&&mData.type.name]||"노말";
@@ -238,23 +256,29 @@ dexCache[id]=data;writeCache();return data;
 }
 
 class Pokemon{
-constructor(data,level){this.dexNo=data.dexNo;this.name=data.name;this.type1=data.type1;this.type2=data.type2;this.level=level||10;this.maxHp=Math.floor(data.hp*2*this.level/100)+this.level+10;this.hp=this.maxHp;this.attack=Math.floor(data.attack*2*this.level/100)+5;this.defense=Math.floor(data.defense*2*this.level/100)+5;this.legendary=!!data.legendary;this.mythical=!!data.mythical;this.learnedMoves=data.learnedMoves||{};this.moves=this.assignMoves();}
+constructor(data,level){
+this.dexNo=data.dexNo;this.name=data.name;this.type1=data.type1;this.type2=data.type2;
+this.level=level||10;
+this.maxHp=Math.floor(data.hp*2*this.level/100)+this.level+10;
+this.hp=this.maxHp;
+this.attack=Math.floor(data.attack*2*this.level/100)+5;
+this.defense=Math.floor(data.defense*2*this.level/100)+5;
+this.legendary=!!data.legendary;this.mythical=!!data.mythical;
+this.learnedMoves=data.learnedMoves||{};
+this.moves=this.assignMoves();
+}
 assignMoves(){
 var a={};
 var allowedTypes=this.type2?[this.type1,this.type2]:[this.type1];
 var self=this;
 Object.keys(this.learnedMoves).forEach(function(n){
 var m=self.learnedMoves[n];
-if(m&&allowedTypes.indexOf(m[0])>=0&&Object.keys(a).length<4){
-a[n]=m;
-}
+if(m&&allowedTypes.indexOf(m[0])>=0&&Object.keys(a).length<4){a[n]=m;}
 });
 allowedTypes.forEach(function(t){
 var pool=TYPE_MOVES[t]||[];
 pool.forEach(function(n){
-if(Object.keys(a).length<4&&MOVES[n]&&allowedTypes.indexOf(MOVES[n][0])>=0&&!a[n]){
-a[n]=MOVES[n];
-}
+if(Object.keys(a).length<4&&MOVES[n]&&allowedTypes.indexOf(MOVES[n][0])>=0&&!a[n]){a[n]=MOVES[n];}
 });
 });
 allowedTypes.forEach(function(t){
@@ -274,7 +298,7 @@ if(!d)return null;
 var base=await getPokemonData(d.dexNo);
 var p=new Pokemon(base,Math.max(1,Math.min(100,Number(d.level)||1)));
 p.maxHp=Math.max(1,Number(d.maxHp)||p.maxHp);
-p.hp=Math.max(0,Math.min(p.maxHp,Number(d.hp)||0));
+p.hp=Math.max(0,Math.min(p.maxHp,Number.isFinite(Number(d.hp))?Number(d.hp):0));
 p.attack=Math.max(1,Number(d.attack)||p.attack);
 p.defense=Math.max(1,Number(d.defense)||p.defense);
 if(d.moves){
@@ -294,7 +318,7 @@ return p;
 function saveGame(){
 try{
 if(!playerPkmn)return false;
-var data={version:3,playerName:playerName,floor:floor,playerPkmn:serializePokemon(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,savedAt:Date.now()};
+var data={version:4,playerName:playerName,floor:floor,activeIndex:caughtPokemon.indexOf(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,savedAt:Date.now()};
 localStorage.setItem(SAVE_KEY,JSON.stringify(data));
 updateSaveStatus("💾 자동 저장 완료 · "+new Date().toLocaleTimeString());
 return true;
@@ -306,14 +330,23 @@ try{
 var raw=localStorage.getItem(SAVE_KEY);
 if(!raw)return false;
 var d=JSON.parse(raw);
-if(!d||!d.playerPkmn)return false;
+if(!d||(!d.playerPkmn&&!(d.caughtPokemon&&d.caughtPokemon.length)))return false;
 playerName=String(d.playerName||"카이").slice(0,10);
 floor=Math.max(1,Math.floor(Number(d.floor)||1));
-playerPkmn=await restorePokemon(d.playerPkmn);
-oppPkmn=await restorePokemon(d.oppPkmn);
 caughtPokemon=[];
 for(var i=0;i<(d.caughtPokemon||[]).length;i++){var p=await restorePokemon(d.caughtPokemon[i]);if(p)caughtPokemon.push(p);}
-if(!caughtPokemon.length)caughtPokemon=[playerPkmn];
+var idx=(typeof d.activeIndex==="number")?d.activeIndex:-1;
+if(idx<0||idx>=caughtPokemon.length){
+// 구버전 세이브: 출전 포켓몬을 파티에서 찾거나, 없으면 추가
+var old=d.playerPkmn?await restorePokemon(d.playerPkmn):null;
+if(old){
+idx=caughtPokemon.findIndex(function(q){return q.dexNo===old.dexNo&&q.level===old.level;});
+if(idx<0){caughtPokemon.unshift(old);idx=0;}else{caughtPokemon[idx]=old;}
+}else{idx=0;}
+}
+if(!caughtPokemon.length)return false;
+playerPkmn=caughtPokemon[idx];
+oppPkmn=await restorePokemon(d.oppPkmn);
 inventory={};
 itemNames.forEach(function(n){var v=Number(d.inventory&&d.inventory[n]);inventory[n]=Number.isFinite(v)?Math.max(0,Math.floor(v)):0;});
 gameEnded=!!d.gameEnded;
@@ -349,24 +382,30 @@ updateSaveStatus("세이브 데이터 없음");
 
 function updateInfo(){
 var s="🎒 ";
-itemNames.forEach(function(n){s+=n+" "+inventory[n]+"개  ";});
+itemNames.forEach(function(n){
+var inf=(n==="마스터볼"&&cheatOn("8201KX71"))||(n==="이상한사탕"&&cheatOn("8202KX71"));
+s+=n+" "+(inf?"∞":inventory[n])+"개  ";
+});
 document.getElementById("info").innerText=s;
 }
 
 function updateStatus(){
-if(!playerPkmn||!oppPkmn)return;
+if(!playerPkmn)return;
 document.getElementById("player-pkmn-name").innerText=playerPkmn.name;
-document.getElementById("player-level").innerText="Lv."+playerPkmn.level;
-document.getElementById("player-hp-text").innerText=playerPkmn.hp+"/"+playerPkmn.maxHp;
-var p=playerPkmn.hp/playerPkmn.maxHp*100;
+var infStat=cheatOn("ID000000");
+document.getElementById("player-level").innerText="Lv."+(infStat?"∞":playerPkmn.level);
+document.getElementById("player-hp-text").innerText=infStat?"∞/∞":playerPkmn.hp+"/"+playerPkmn.maxHp;
+var p=infStat?100:playerPkmn.hp/playerPkmn.maxHp*100;
 document.getElementById("player-hp-bar").style.width=p+"%";
 document.getElementById("player-hp-bar").style.backgroundColor=getHpColor(p);
+if(oppPkmn){
 document.getElementById("opp-name").innerText=(oppPkmn.legendary?"⭐ ":"")+oppPkmn.name;
 document.getElementById("opp-level").innerText="Lv."+oppPkmn.level+(oppPkmn.legendary?" 전설":"");
 document.getElementById("opp-hp-text").innerText=oppPkmn.hp+"/"+oppPkmn.maxHp;
 var o=oppPkmn.hp/oppPkmn.maxHp*100;
 document.getElementById("opp-hp-bar").style.width=o+"%";
 document.getElementById("opp-hp-bar").style.backgroundColor=getHpColor(o);
+}
 updateInfo();
 }
 
@@ -393,10 +432,10 @@ showSection("setup-starter");
 }
 
 async function pickWildData(){
-if(floor%100===0){
+if(floor%100===0||cheatOn("SA01YT1N")){
 var ids=legendaryIds.slice().sort(function(){return Math.random()-0.5;});
 for(var i=0;i<ids.length;i++){
-try{var d=await getPokemonData(ids[i]);if(d.legendary)return d;}catch(e){}
+try{var d=await getPokemonData(ids[i]);if(d.legendary||(cheatOn("SA01YT1N")&&d.mythical))return d;}catch(e){}
 }
 throw new Error("전설 포켓몬 데이터를 불러오지 못했습니다.");
 }
@@ -465,7 +504,14 @@ return e;
 }
 
 function calculateDamage(a,d,n){
-var m=a.moves[n],stab=(m[0]===a.type1||m[0]===a.type2)?1.5:1,e=typeEffect(m[0],d),crit=Math.random()<.07,lv=2*a.level/5+2,base=lv*m[1]*(a.attack/Math.max(1,d.defense))/50+2,diff=a===oppPkmn?.5:1.2;
+var m=a.moves[n];
+var stab=(m[0]===a.type1||m[0]===a.type2)?1.5:1;
+var e=typeEffect(m[0],d);
+var crit=Math.random()<.07;
+var lvl=(isPartyMon(a)&&cheatOn("ID000000"))?9999:a.level;
+var lv=2*lvl/5+2;
+var base=lv*m[1]*(a.attack/Math.max(1,d.defense))/50+2;
+var diff=a===oppPkmn?.5:1.2;
 return {damage:Math.max(1,Math.floor(base*stab*e*(crit?1.5:1)*(.9+Math.random()*.1)*diff)),typeEff:e,critical:crit};
 }
 
@@ -473,7 +519,7 @@ async function executeAttack(a,d,n,isPlayer){
 log("▶ "+(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!");
 await delay(350);
 var r=calculateDamage(a,d,n);
-d.hp=Math.max(0,d.hp-r.damage);
+if(!(isPartyMon(d)&&cheatOn("ID000000")))d.hp=Math.max(0,d.hp-r.damage);
 var s=(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!\n";
 if(r.typeEff>=2)s+="효과는 굉장했다!\n";
 else if(r.typeEff>0&&r.typeEff<=.5)s+="효과는 별로인 듯하다...\n";
@@ -482,6 +528,27 @@ if(r.critical)s+="급소에 맞았다!\n";
 s+=d.name+"에게 "+r.damage+" 데미지!";
 log(s);updateStatus();saveGame();
 await delay(500);
+}
+
+async function enemyTurn(){
+var ek=Object.keys(oppPkmn.moves),en=ek[Math.floor(Math.random()*ek.length)];
+await executeAttack(oppPkmn,playerPkmn,en,false);
+}
+
+function hasAlivePartner(){
+return caughtPokemon.some(function(p){return p!==playerPkmn&&!p.isFainted();});
+}
+
+// 출전 포켓몬이 쓰러졌을 때: 남은 포켓몬이 있으면 교체, 없으면 게임오버
+function handlePlayerFaint(){
+isProcessing=false;
+if(hasAlivePartner()){
+log("💥 "+playerPkmn.name+"이(가) 쓰러졌다!\n다음 포켓몬을 선택하세요!");
+saveGame();
+showParty(true);
+}else{
+gameOver();
+}
 }
 
 async function playerAttack(i){
@@ -494,9 +561,8 @@ if(oppPkmn.isFainted()){
 log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!");
 isProcessing=false;clearFloor();return;
 }
-var ek=Object.keys(oppPkmn.moves),en=ek[Math.floor(Math.random()*ek.length)];
-await executeAttack(oppPkmn,playerPkmn,en,false);
-if(playerPkmn.isFainted()){gameOver();return;}
+await enemyTurn();
+if(playerPkmn.isFainted()){handlePlayerFaint();return;}
 isProcessing=false;showSection("action-menu");
 log("무엇을 할까요?");
 saveGame();
@@ -506,9 +572,11 @@ async function catchPokemon(){
 if(isProcessing||gameEnded||!oppPkmn)return;
 isProcessing=true;showSection(null);
 var bs=[["마스터볼",999],["하이퍼볼",2.5],["슈퍼볼",1.6],["몬스터볼",1]],ball="",mult=1;
-for(var i=0;i<bs.length;i++){if(inventory[bs[i][0]]>0){ball=bs[i][0];mult=bs[i][1];break;}}
+if(cheatOn("8201KX71")){ball="마스터볼";mult=999;}
+else for(var i=0;i<bs.length;i++){if(inventory[bs[i][0]]>0){ball=bs[i][0];mult=bs[i][1];break;}}
 if(!ball){log("포켓몬볼이 없습니다!");isProcessing=false;showSection("action-menu");return;}
-inventory[ball]--;updateInfo();saveGame();
+if(!cheatOn("8201KX71"))inventory[ball]--;
+updateInfo();saveGame();
 log("🎯 "+ball+"을(를) 던졌다!");
 await delay(600);
 var chance=Math.min(1,(.35+(1-oppPkmn.hp/oppPkmn.maxHp)*.5)*mult*(oppPkmn.legendary?.45:1));
@@ -524,22 +592,22 @@ clearFloor();
 }else{
 log("포획 실패! "+oppPkmn.name+"이(가) 볼에서 나왔다!");
 await delay(500);
-var ks=Object.keys(oppPkmn.moves),m=ks[Math.floor(Math.random()*ks.length)];
-await executeAttack(oppPkmn,playerPkmn,m,false);
-if(playerPkmn.isFainted()){gameOver();return;}
+await enemyTurn();
+if(playerPkmn.isFainted()){handlePlayerFaint();return;}
 isProcessing=false;showSection("action-menu");saveGame();
 }
 }
 
 function useItem(){
+if(isProcessing||gameEnded)return;
 var s="🎒 아이템 목록\n\n";
 itemNames.forEach(function(n,i){s+=(i+1)+". "+n+" × "+inventory[n]+"\n";});
 var c=prompt(s+"\n사용할 아이템 번호를 입력하세요.");
 if(c===null)return;
 var i=parseInt(c)-1;
-if(i<0||i>=itemNames.length||isNaN(i)){log("잘못된 선택입니다.");return;}
+if(isNaN(i)||i<0||i>=itemNames.length){log("잘못된 선택입니다.");return;}
 var n=itemNames[i];
-if(inventory[n]<=0){log(n+"이(가) 없습니다!");return;}
+if(inventory[n]<=0&&!(n==="이상한사탕"&&cheatOn("8202KX71"))){log(n+"이(가) 없습니다!");return;}
 if(n==="상처약"||n==="좋은상처약"){
 if(playerPkmn.hp>=playerPkmn.maxHp){log("HP가 이미 가득 찼습니다!");return;}
 inventory[n]--;
@@ -551,7 +619,7 @@ saveGame();
 return;
 }
 if(n==="이상한사탕"){
-inventory[n]--;
+if(!cheatOn("8202KX71"))inventory[n]--;
 playerPkmn.level++;
 playerPkmn.maxHp+=2;
 playerPkmn.attack+=2;
@@ -565,11 +633,42 @@ return;
 log("포획용 볼은 포획하기 버튼을 누르면 자동으로 사용됩니다.");
 }
 
-function showParty(){
-var s="📋 포켓몬 보유 목록\n━━━━━━━━━━━━\n";
-caughtPokemon.forEach(function(p,i){s+=(i+1)+". "+(p.legendary?"⭐ ":"")+p.name+" Lv."+p.level+"\n   HP "+p.hp+"/"+p.maxHp+"\n";});
-s+="━━━━━━━━━━━━\n현재 출전: "+playerPkmn.name;
-log(s);
+// 포켓몬 교체 메뉴. forced=true면 쓰러져서 어쩔 수 없이 교체(턴 소모 없음, 뒤로가기 불가)
+function showParty(forced){
+if(!forced&&(isProcessing||gameEnded))return;
+var list=document.getElementById("party-list");
+list.innerHTML="";
+caughtPokemon.forEach(function(p,i){
+var b=document.createElement("button");
+var active=(p===playerPkmn);
+b.innerText=(active?"▶ ":"")+(p.legendary?"⭐ ":"")+p.name+" Lv."+p.level+"\nHP "+p.hp+"/"+p.maxHp+(p.isFainted()?" (기절)":"")+(active?" · 출전 중":"");
+b.disabled=p.isFainted()||active;
+b.onclick=function(){switchTo(i,forced);};
+list.appendChild(b);
+});
+document.getElementById("party-back").classList.toggle("hidden",!!forced);
+showSection("party-menu");
+}
+
+async function switchTo(i,forced){
+if(isProcessing)return;
+var p=caughtPokemon[i];
+if(!p||p.isFainted()||p===playerPkmn)return;
+isProcessing=true;showSection(null);
+var prev=playerPkmn;
+playerPkmn=p;
+updateStatus();
+log((forced?"":"돌아와, "+prev.name+"!\n")+"가라! "+p.name+"!");
+saveGame();
+await delay(700);
+if(!forced&&oppPkmn){
+await enemyTurn();
+if(playerPkmn.isFainted()){handlePlayerFaint();return;}
+}
+isProcessing=false;
+showSection("action-menu");
+log("무엇을 할까요?");
+saveGame();
 }
 
 function runAway(){
@@ -584,17 +683,95 @@ setTimeout(function(){isProcessing=false;startFloor();},800);
 
 function gameOver(){
 isProcessing=false;gameEnded=true;
-log("💀 "+playerPkmn.name+"이(가) 쓰러졌습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
+log("💀 파티가 전멸했습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
 showSection("restart-menu");
 saveGame();
 }
 
 function restartGame(){
-if(!playerPkmn){showSection("setup-starter");return;}
-floor=1;playerPkmn.hp=playerPkmn.maxHp;oppPkmn=null;gameEnded=false;isProcessing=false;
-log("🔄 새로운 도전을 시작합니다!\n파트너 포켓몬이 회복되었습니다.");
+if(!caughtPokemon.length){showSection("setup-starter");return;}
+floor=1;
+caughtPokemon.forEach(function(p){p.hp=p.maxHp;});
+playerPkmn=caughtPokemon[0];
+oppPkmn=null;gameEnded=false;isProcessing=false;
+log("🔄 새로운 도전을 시작합니다!\n파티 전원이 회복되었습니다.");
 startFloor();
 }
+
+/* ===== 이스터에그: 화면을 꾹 누른 뒤 5번 연속 터치 → 치트창 ===== */
+var CHEAT_KEY="pokemon_roguelike_cheats_v1";
+var CHEATS={"8201KX71":"마스터볼 무한","8202KX71":"이상한사탕 무한","SA01YT1N":"전설 포켓몬 등장","ID000000":"레벨·체력 무한"};
+var savedCheats={};
+function loadCheats(){try{savedCheats=JSON.parse(localStorage.getItem(CHEAT_KEY)||"{}")||{};}catch(e){savedCheats={};}}
+function storeCheats(){try{localStorage.setItem(CHEAT_KEY,JSON.stringify(savedCheats));}catch(e){}}
+function cheatOn(c){return savedCheats[c]===true;}
+function isPartyMon(p){return !!p&&caughtPokemon.indexOf(p)>=0;}
+loadCheats();
+
+function applyCheatChange(){
+if(cheatOn("ID000000"))caughtPokemon.forEach(function(p){p.hp=p.maxHp;});
+updateInfo();
+if(playerPkmn)updateStatus();
+if(playerPkmn)saveGame();
+}
+
+function renderCheatPanel(){
+var l=document.getElementById("cheat-list");
+l.innerHTML="";
+var keys=Object.keys(savedCheats);
+if(!keys.length){
+var e=document.createElement("div");e.className="small";e.innerText="저장된 치트가 없습니다.\n아래 + 버튼으로 추가하세요.";
+l.appendChild(e);return;
+}
+keys.forEach(function(c){
+var row=document.createElement("div");row.className="cheat-row";
+var cb=document.createElement("input");cb.type="checkbox";cb.checked=savedCheats[c]===true;
+cb.onchange=function(){savedCheats[c]=cb.checked;storeCheats();applyCheatChange();};
+var nm=document.createElement("span");nm.className="cheat-name";nm.innerText=c+"\n"+(CHEATS[c]||"");nm.style.whiteSpace="pre-line";
+var del=document.createElement("button");del.innerText="✕";
+del.onclick=function(){delete savedCheats[c];storeCheats();renderCheatPanel();applyCheatChange();};
+row.appendChild(cb);row.appendChild(nm);row.appendChild(del);
+l.appendChild(row);
+});
+}
+
+function addCheat(){
+var c=prompt("치트 코드를 입력하세요");
+if(c===null)return;
+c=c.trim().toUpperCase();
+if(!Object.prototype.hasOwnProperty.call(CHEATS,c)){alert("올바르지 않은 코드입니다.");return;}
+if(Object.prototype.hasOwnProperty.call(savedCheats,c)){alert("이미 저장된 코드입니다.");return;}
+savedCheats[c]=true;
+storeCheats();renderCheatPanel();applyCheatChange();
+}
+
+function openCheat(){renderCheatPanel();document.getElementById("cheat-overlay").classList.remove("hidden");}
+function closeCheat(){document.getElementById("cheat-overlay").classList.add("hidden");}
+function cheatPanelOpen(){return !document.getElementById("cheat-overlay").classList.contains("hidden");}
+
+var egg={holdTimer:null,expire:null,armed:false,taps:0,blockUntil:0};
+function eggReset(){egg.armed=false;egg.taps=0;clearTimeout(egg.expire);}
+document.addEventListener("pointerdown",function(){
+if(cheatPanelOpen())return;
+if(egg.armed){
+egg.taps++;
+clearTimeout(egg.expire);
+if(egg.taps>=5){eggReset();egg.blockUntil=Date.now()+600;openCheat();return;}
+egg.expire=setTimeout(eggReset,1500);
+return;
+}
+clearTimeout(egg.holdTimer);
+egg.holdTimer=setTimeout(function(){
+egg.armed=true;egg.taps=0;
+clearTimeout(egg.expire);
+egg.expire=setTimeout(eggReset,5000);
+},700);
+},true);
+["pointerup","pointercancel"].forEach(function(t){document.addEventListener(t,function(){clearTimeout(egg.holdTimer);},true);});
+document.addEventListener("click",function(e){
+if(egg.armed||Date.now()<egg.blockUntil){e.stopPropagation();e.preventDefault();}
+},true);
+document.addEventListener("contextmenu",function(e){if(egg.armed||egg.holdTimer)e.preventDefault();});
 
 async function initializeGame(){
 readCache();
@@ -603,12 +780,18 @@ if(ok){
 document.getElementById("floor-display").innerText="🏰 "+floor+"층";
 updateInfo();
 if(gameEnded){
+updateStatus();
 log("💀 저장된 도전 기록을 불러왔습니다.");
 showSection("restart-menu");
 }else if(oppPkmn){
 updateStatus();
+if(playerPkmn.isFainted()){
+if(hasAlivePartner()){log("💥 "+playerPkmn.name+"이(가) 쓰러진 상태입니다!\n다음 포켓몬을 선택하세요!");showParty(true);}
+else gameOver();
+}else{
 log("💾 저장된 모험을 불러왔습니다!\n"+floor+"층에서 이어서 시작합니다.\n야생의 "+oppPkmn.name+"이(가) 기다리고 있습니다!");
 showSection("action-menu");
+}
 }else{
 await startFloor();
 }
