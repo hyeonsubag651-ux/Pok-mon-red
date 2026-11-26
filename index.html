@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>포켓몬스터 레전드 로그라이크</title>
+<title>포켓몬스터 더 레전드 로그라이크</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'DungGeunMo','Courier New',monospace}
 body{background:#202020;color:#101010;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:12px}
@@ -17,6 +17,9 @@ header{background:#cc0000;color:white;text-align:center;padding:15px;font-size:1
 .hp-bar-outer{width:100%;height:16px;background:#e0e0e0;border:2px solid #303030;border-radius:8px;overflow:hidden}
 .hp-bar-inner{height:100%;width:100%;background:#4caf50;transition:width .3s}
 .hp-text{text-align:right;font-size:.85rem;margin-top:4px;font-weight:bold}
+.exp-bar-outer{width:100%;height:8px;background:#e0e0e0;border:2px solid #303030;border-radius:6px;overflow:hidden;margin-top:6px}
+.exp-bar-inner{height:100%;width:0;background:#2196f3;transition:width .3s}
+.exp-text{text-align:right;font-size:.75rem;margin-top:2px;color:#444}
 #log-box{min-height:100px;max-height:160px;background:#2b2b2b;color:white;padding:12px 16px;font-size:.95rem;line-height:1.5;border-bottom:4px solid #303030;overflow-y:auto;white-space:pre-wrap}
 #info{padding:10px;background:#e9e9e9;border-bottom:2px solid #333;font-size:.85rem;line-height:1.7}
 #controls{padding:15px;background:#f0f0f0;min-height:150px}
@@ -59,6 +62,8 @@ input{-webkit-user-select:text;user-select:text}
 <div class="pokemon-info"><span id="player-pkmn-name">내 포켓몬</span><span id="player-level">Lv.?</span></div>
 <div class="hp-bar-outer"><div id="player-hp-bar" class="hp-bar-inner"></div></div>
 <div class="hp-text" id="player-hp-text">--/--</div>
+<div class="exp-bar-outer"><div id="player-exp-bar" class="exp-bar-inner"></div></div>
+<div class="exp-text" id="player-exp-text">EXP --</div>
 </div>
 </div>
 <div id="info">🎒 아이템: 준비 중</div>
@@ -68,7 +73,7 @@ input{-webkit-user-select:text;user-select:text}
 <button onclick="manualSave()">💾 수동 저장</button>
 <button onclick="resetSave()">🗑️ 세이브 리셋</button>
 </div>
-<div class="small">전국도감 1~1025 지원 · 전 세대 기술 연동 · 100층마다 전설 포켓몬 보스</div>
+<div class="small">전국도감 1~1025 지원 · 전 세대 기술 연동 · 경험치·진화 · 레벨 상한 없음 · 100층마다 전설 보스</div>
 <div id="controls">
 <div id="setup-name" class="btn-grid">
 <input id="player-name-input" class="full" maxlength="10" placeholder="주인공 이름 (기본값: 카이)">
@@ -187,8 +192,27 @@ var dexCache={};
 var moveCache={};
 var legendaryIds=[144,145,146,150,243,244,245,249,250,377,378,379,380,381,382,383,384,480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,716,717,718,772,773,785,786,787,788,789,790,791,792,800,888,889,890,898,905,1001,1002,1003,1004,1007,1008,1014,1015,1016,1017,1024];
 var playerName="카이",playerPkmn=null,oppPkmn=null,caughtPokemon=[],floor=1,isProcessing=false,gameEnded=false;
+var battleFighters=[];
 var inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
 var itemNames=["상처약","좋은상처약","이상한사탕","몬스터볼","슈퍼볼","하이퍼볼","마스터볼"];
+
+/* ===== 경험치 / 진화 설정 =====
+   경험치 곡선: 레벨 n에 필요한 누적 경험치 = n³ (본가 '보통' 곡선, 레벨 상한 없음)
+   EXP_RATE를 낮추면 레벨업이 더 느려지고, 높이면 빨라집니다. */
+var EXP_RATE=1;          // 획득 경험치 전체 배율
+var EXP_SHARE_RATE=0.25; // 전투에 안 나온 파티원이 받는 비율 (경험치 나눠받기)
+var EVO_FALLBACK_LEVEL=36;  // 돌/통신 등 레벨 조건이 없는 진화의 대체 레벨
+var EVO_FALLBACK_LEVELUP=30; // 친밀도·시간대 등 조건형 레벨업 진화의 대체 레벨
+
+function expForLevel(n){return n*n*n;}
+function calcExpYield(foe,ownerLevel){
+var b=foe.baseExp||64;
+var base=b*foe.level/5;
+var f=Math.pow((2*foe.level+10)/(foe.level+ownerLevel+10),2.5);
+var y=Math.floor(base*f)+1;
+if(foe.legendary)y=Math.floor(y*1.5);
+return Math.max(1,Math.floor(y*EXP_RATE));
+}
 
 function log(msg){var b=document.getElementById("log-box");b.innerText=msg;b.scrollTop=b.scrollHeight;}
 function delay(ms){return new Promise(function(r){setTimeout(r,ms);});}
@@ -240,9 +264,53 @@ writeCache();
 return result;
 }
 
+/* PokeAPI 진화 체인에서 이 포켓몬의 다음 진화 목록 [{to:도감번호, level:진화레벨}] 추출 */
+async function fetchEvolutions(species){
+if(!species.evolution_chain||!species.evolution_chain.url)return [];
+var chain=await fetchJson(species.evolution_chain.url);
+var found=null;
+var walk=function(n){
+if(found)return;
+if(n.species.name===species.name){found=n;return;}
+(n.evolves_to||[]).forEach(walk);
+};
+walk(chain.chain);
+if(!found)return [];
+var out=[];
+(found.evolves_to||[]).forEach(function(n){
+var m=n.species.url.match(/species\/(\d+)/);
+if(!m)return;
+var id=Number(m[1]);
+if(id<1||id>1025)return;
+var lv=null;
+(n.evolution_details||[]).forEach(function(d){
+var l=d.min_level;
+if(!l)l=(d.trigger&&d.trigger.name==="level-up")?EVO_FALLBACK_LEVELUP:EVO_FALLBACK_LEVEL;
+if(lv===null||l<lv)lv=l;
+});
+if(lv===null)lv=EVO_FALLBACK_LEVEL;
+out.push({to:id,level:lv});
+});
+return out;
+}
+
+// 예전 캐시에 없는 기본 경험치/진화 정보를 보충
+async function fillExtra(id,data){
+var raw=await fetchJson(API+"pokemon/"+id);
+var species=await fetchJson(API+"pokemon-species/"+id);
+data.baseExp=raw.base_experience||64;
+data.evolutions=await fetchEvolutions(species);
+}
+
 async function getPokemonData(id){
 id=Number(id);if(id<1||id>1025)throw new Error("도감 번호 오류");
-if(dexCache[id])return dexCache[id];
+if(dexCache[id]){
+var c=dexCache[id];
+if(c.evolutions===undefined||c.baseExp===undefined){
+try{await fillExtra(id,c);writeCache();}catch(e){}
+}
+return c;
+}
 var raw=await fetchJson(API+"pokemon/"+id);
 var species=await fetchJson(API+"pokemon-species/"+id);
 var korean=species.names.find(function(n){return n.language.name==="ko";});
@@ -251,20 +319,39 @@ var type1=types[0]||"노말",type2=types[1]||null;
 var allowedTypes=type2?[type1,type2]:[type1];
 var stats={};raw.stats.forEach(function(s){stats[s.stat.name]=s.base_stat;});
 var learnedMoves=await extractLearnedMoves(raw.moves,allowedTypes);
-var data={dexNo:id,name:korean?korean.name:(raw.name),type1:type1,type2:type2,hp:stats.hp||50,attack:stats.attack||50,defense:stats.defense||50,legendary:!!species.is_legendary,mythical:!!species.is_mythical,learnedMoves:learnedMoves};
+var evos;
+try{evos=await fetchEvolutions(species);}catch(e){evos=undefined;}
+var data={dexNo:id,name:korean?korean.name:(raw.name),type1:type1,type2:type2,hp:stats.hp||50,attack:stats.attack||50,defense:stats.defense||50,legendary:!!species.is_legendary,mythical:!!species.is_mythical,learnedMoves:learnedMoves,baseExp:raw.base_experience||64,evolutions:evos};
 dexCache[id]=data;writeCache();return data;
+}
+
+// 도감 데이터를 포켓몬 개체에 적용 (생성/진화 공용)
+function applyForm(p,data){
+p.dexNo=data.dexNo;p.name=data.name;p.type1=data.type1;p.type2=data.type2;
+p.baseHp=data.hp;p.baseAtk=data.attack;p.baseDef=data.defense;
+p.baseExp=data.baseExp||64;
+p.evolutions=data.evolutions;
+p.legendary=!!data.legendary;p.mythical=!!data.mythical;
+p.learnedMoves=data.learnedMoves||{};
+}
+
+// 레벨 기준으로 능력치 재계산. 최대 HP가 늘어난 만큼 현재 HP도 함께 증가
+function recalcStats(p){
+var oldMax=p.maxHp||0;
+p.maxHp=Math.floor(p.baseHp*2*p.level/100)+p.level+10;
+p.attack=Math.floor(p.baseAtk*2*p.level/100)+5;
+p.defense=Math.floor(p.baseDef*2*p.level/100)+5;
+if(oldMax>0)p.hp=Math.min(p.maxHp,Math.max(0,p.hp)+Math.max(0,p.maxHp-oldMax));
+else p.hp=p.maxHp;
 }
 
 class Pokemon{
 constructor(data,level){
-this.dexNo=data.dexNo;this.name=data.name;this.type1=data.type1;this.type2=data.type2;
-this.level=level||10;
-this.maxHp=Math.floor(data.hp*2*this.level/100)+this.level+10;
-this.hp=this.maxHp;
-this.attack=Math.floor(data.attack*2*this.level/100)+5;
-this.defense=Math.floor(data.defense*2*this.level/100)+5;
-this.legendary=!!data.legendary;this.mythical=!!data.mythical;
-this.learnedMoves=data.learnedMoves||{};
+this.level=Math.max(1,Math.floor(level||10));
+applyForm(this,data);
+this.maxHp=0;this.hp=0;
+recalcStats(this);
+this.exp=expForLevel(this.level);
 this.moves=this.assignMoves();
 }
 assignMoves(){
@@ -291,16 +378,91 @@ return a;
 isFainted(){return this.hp<=0;}
 }
 
-function serializePokemon(p){if(!p)return null;return {dexNo:p.dexNo,level:p.level,hp:p.hp,maxHp:p.maxHp,attack:p.attack,defense:p.defense,moves:p.moves,legendary:p.legendary,mythical:p.mythical};}
+/* ===== 경험치 · 레벨업 · 진화 ===== */
+// 경험치를 더하고 레벨업 처리. 오른 레벨 수 반환
+function addExp(p,amount){
+var before=p.level;
+p.exp+=amount;
+while(p.exp>=expForLevel(p.level+1))p.level++;
+if(p.level>before)recalcStats(p);
+return p.level-before;
+}
+
+// 진화 후 타입이 달라져도 쓸 수 있도록 기술 정리
+function refreshMovesAfterEvolve(p){
+var allowed=p.type2?[p.type1,p.type2]:[p.type1];
+var keep={};
+Object.keys(p.moves).forEach(function(k){
+var m=p.moves[k];
+if(m&&allowed.indexOf(m[0])>=0)keep[k]=m;
+});
+var fresh=p.assignMoves();
+Object.keys(fresh).forEach(function(k){
+if(Object.keys(keep).length<4&&!keep[k])keep[k]=fresh[k];
+});
+if(Object.keys(keep).length)p.moves=keep;
+}
+
+// 진화 가능 레벨이 되었는지 확인하고 진화시킴. 진화 메시지 배열 반환
+async function tryEvolve(p){
+var msgs=[];
+if(p.evolutions===undefined){
+try{var cd=await getPokemonData(p.dexNo);p.evolutions=cd.evolutions;p.baseExp=cd.baseExp||p.baseExp;}catch(e){}
+}
+for(var guard=0;guard<5;guard++){
+var cands=(p.evolutions||[]).filter(function(e){return e.level<=p.level;});
+if(!cands.length)break;
+var e=cands[Math.floor(Math.random()*cands.length)];
+var d;
+try{d=await getPokemonData(e.to);}catch(err){break;}
+var oldName=p.name;
+applyForm(p,d);
+recalcStats(p);
+refreshMovesAfterEvolve(p);
+msgs.push("✨ 어라? "+oldName+"의 모습이...!\n🎊 "+oldName+"이(가) "+p.name+"(으)로 진화했다!");
+}
+return msgs;
+}
+
+// 쓰러뜨린(또는 포획한) 상대로부터 경험치 지급. mult는 포획 시 0.5 등.
+async function awardExp(foe,mult){
+var alive=caughtPokemon.filter(function(p){return !p.isFainted();});
+var fighters=battleFighters.filter(function(p){return alive.indexOf(p)>=0;});
+if(!fighters.length&&playerPkmn&&alive.indexOf(playerPkmn)>=0)fighters=[playerPkmn];
+var share=Math.max(1,fighters.length);
+var lines=[],sharedCount=0;
+for(var i=0;i<alive.length;i++){
+var p=alive[i];
+var isF=fighters.indexOf(p)>=0;
+var amt=Math.max(1,Math.floor(calcExpYield(foe,p.level)*mult*(isF?1/share:EXP_SHARE_RATE)));
+var oldName=p.name,oldLv=p.level;
+var gained=addExp(p,amt);
+var evo=await tryEvolve(p);
+if(isF)lines.push("📈 "+oldName+" 경험치 +"+amt);
+else sharedCount++;
+if(gained>0)lines.push("⬆️ "+oldName+" Lv."+oldLv+" → Lv."+p.level+"!");
+evo.forEach(function(m){lines.push(m);});
+}
+if(sharedCount>0)lines.push("🤝 대기 중인 파티원 "+sharedCount+"마리도 경험치 일부를 나눠 받았다!");
+updateStatus();
+return lines.join("\n");
+}
+
+function serializePokemon(p){if(!p)return null;return {dexNo:p.dexNo,level:p.level,exp:p.exp,hp:p.hp,maxHp:p.maxHp,attack:p.attack,defense:p.defense,moves:p.moves,legendary:p.legendary,mythical:p.mythical};}
 
 async function restorePokemon(d){
 if(!d)return null;
 var base=await getPokemonData(d.dexNo);
-var p=new Pokemon(base,Math.max(1,Math.min(100,Number(d.level)||1)));
+var p=new Pokemon(base,Math.max(1,Math.floor(Number(d.level)||1)));
 p.maxHp=Math.max(1,Number(d.maxHp)||p.maxHp);
 p.hp=Math.max(0,Math.min(p.maxHp,Number.isFinite(Number(d.hp))?Number(d.hp):0));
 p.attack=Math.max(1,Number(d.attack)||p.attack);
 p.defense=Math.max(1,Number(d.defense)||p.defense);
+// 구버전 세이브(경험치 없음)는 현재 레벨의 시작 경험치로 시작
+var minExp=expForLevel(p.level);
+var savedExp=Number(d.exp);
+p.exp=Number.isFinite(savedExp)?Math.max(minExp,savedExp):minExp;
+if(p.exp>=expForLevel(p.level+1))p.exp=expForLevel(p.level+1)-1;
 if(d.moves){
 var allowedTypes=p.type2?[p.type1,p.type2]:[p.type1];
 var cleanMoves={};
@@ -347,6 +509,7 @@ if(idx<0){caughtPokemon.unshift(old);idx=0;}else{caughtPokemon[idx]=old;}
 if(!caughtPokemon.length)return false;
 playerPkmn=caughtPokemon[idx];
 oppPkmn=await restorePokemon(d.oppPkmn);
+battleFighters=[playerPkmn];
 inventory={};
 itemNames.forEach(function(n){var v=Number(d.inventory&&d.inventory[n]);inventory[n]=Number.isFinite(v)?Math.max(0,Math.floor(v)):0;});
 gameEnded=!!d.gameEnded;
@@ -363,7 +526,7 @@ if(saveGame())log("💾 저장 완료!\n현재 진행 상황이 저장되었습�
 function resetSave(){
 if(!confirm("정말 세이브를 초기화할까요? 모든 진행 상황이 삭제됩니다!"))return;
 localStorage.removeItem(SAVE_KEY);
-playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];floor=1;isProcessing=false;gameEnded=false;
+playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;
 inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
 document.getElementById("player-name-input").value="";
 document.getElementById("floor-display").innerText="🏰 준비 중";
@@ -373,6 +536,8 @@ document.getElementById("opp-hp-text").innerText="--/--";
 document.getElementById("player-pkmn-name").innerText="내 포켓몬";
 document.getElementById("player-level").innerText="Lv.?";
 document.getElementById("player-hp-text").innerText="--/--";
+document.getElementById("player-exp-bar").style.width="0%";
+document.getElementById("player-exp-text").innerText="EXP --";
 document.getElementById("opp-hp-bar").style.width="100%";
 document.getElementById("player-hp-bar").style.width="100%";
 updateInfo();showSection("setup-name");
@@ -398,6 +563,10 @@ document.getElementById("player-hp-text").innerText=infStat?"∞/∞":playerPkmn
 var p=infStat?100:playerPkmn.hp/playerPkmn.maxHp*100;
 document.getElementById("player-hp-bar").style.width=p+"%";
 document.getElementById("player-hp-bar").style.backgroundColor=getHpColor(p);
+var lvStart=expForLevel(playerPkmn.level),lvNeed=expForLevel(playerPkmn.level+1)-lvStart;
+var cur=Math.max(0,playerPkmn.exp-lvStart);
+document.getElementById("player-exp-bar").style.width=Math.min(100,cur/lvNeed*100)+"%";
+document.getElementById("player-exp-text").innerText="EXP "+cur+" / "+lvNeed;
 if(oppPkmn){
 document.getElementById("opp-name").innerText=(oppPkmn.legendary?"⭐ ":"")+oppPkmn.name;
 document.getElementById("opp-level").innerText="Lv."+oppPkmn.level+(oppPkmn.legendary?" 전설":"");
@@ -446,9 +615,11 @@ async function startFloor(){
 if(!playerPkmn)return;
 try{
 var d=await pickWildData();
-var lv=Math.max(5,Math.min(100,8+Math.floor(floor*.7)+Math.floor(Math.random()*4)));
-if(floor%100===0)lv=Math.min(100,Math.max(lv,Math.floor(floor*.8)));
+// 레벨 상한 없음: 층이 올라갈수록 적도 계속 강해진다
+var lv=Math.max(5,8+Math.floor(floor*.7)+Math.floor(Math.random()*4));
+if(floor%100===0)lv=Math.max(lv,Math.floor(floor*.8));
 oppPkmn=new Pokemon(d,lv);
+battleFighters=[playerPkmn];
 document.getElementById("floor-display").innerText="🏰 "+floor+"층"+(floor%100===0?" · ⭐ 전설 보스":"");
 updateStatus();
 log("🏰 "+floor+"층 도착!\n"+(oppPkmn.legendary?"⭐ 전설의 ":"야생의 ")+oppPkmn.name+" Lv."+oppPkmn.level+" 등장!\n가라! "+playerPkmn.name+"!");
@@ -556,9 +727,15 @@ if(isProcessing||gameEnded||!oppPkmn)return;
 isProcessing=true;showSection(null);
 var keys=Object.keys(playerPkmn.moves),n=keys[i];
 if(!n){isProcessing=false;showSection("action-menu");return;}
+if(battleFighters.indexOf(playerPkmn)<0)battleFighters.push(playerPkmn);
 await executeAttack(playerPkmn,oppPkmn,n,true);
 if(oppPkmn.isFainted()){
 log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!");
+await delay(700);
+var expMsg=await awardExp(oppPkmn,1);
+log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!\n"+expMsg);
+saveGame();
+await delay(2200);
 isProcessing=false;clearFloor();return;
 }
 await enemyTurn();
@@ -581,12 +758,15 @@ log("🎯 "+ball+"을(를) 던졌다!");
 await delay(600);
 var chance=Math.min(1,(.35+(1-oppPkmn.hp/oppPkmn.maxHp)*.5)*mult*(oppPkmn.legendary?.45:1));
 if(Math.random()<chance){
+if(battleFighters.indexOf(playerPkmn)<0)battleFighters.push(playerPkmn);
+// 포획해도 절반의 경험치를 얻는다 (새로 잡은 포켓몬은 제외하고 지급)
+var catchExp=await awardExp(oppPkmn,0.5);
 caughtPokemon.push(oppPkmn);
 playerPkmn.hp=playerPkmn.maxHp;
 updateStatus();
-log("🎉 포획 성공!\n"+oppPkmn.name+"을(를) 잡았다!\n❤️ 출전 포켓몬 HP 완전 회복!\n보유: "+caughtPokemon.length+"마리");
+log("🎉 포획 성공!\n"+oppPkmn.name+"을(를) 잡았다!\n❤️ 출전 포켓몬 HP 완전 회복!\n"+catchExp+"\n보유: "+caughtPokemon.length+"마리");
 saveGame();
-await delay(900);
+await delay(2200);
 isProcessing=false;
 clearFloor();
 }else{
@@ -620,14 +800,16 @@ return;
 }
 if(n==="이상한사탕"){
 if(!cheatOn("8202KX71"))inventory[n]--;
-playerPkmn.level++;
-playerPkmn.maxHp+=2;
-playerPkmn.attack+=2;
-playerPkmn.defense+=2;
+// 이상한사탕: 다음 레벨의 시작 경험치까지 곧바로 채워준다 (레벨 +1)
+addExp(playerPkmn,expForLevel(playerPkmn.level+1)-playerPkmn.exp);
 playerPkmn.hp=playerPkmn.maxHp;
 updateStatus();
 log("🍬 이상한사탕 사용!\n"+playerPkmn.name+" Lv."+playerPkmn.level+"!");
 saveGame();
+var target=playerPkmn;
+tryEvolve(target).then(function(msgs){
+if(msgs.length){updateStatus();log("🍬 이상한사탕 사용!\n"+msgs.join("\n"));saveGame();}
+});
 return;
 }
 log("포획용 볼은 포획하기 버튼을 누르면 자동으로 사용됩니다.");
@@ -657,6 +839,7 @@ if(!p||p.isFainted()||p===playerPkmn)return;
 isProcessing=true;showSection(null);
 var prev=playerPkmn;
 playerPkmn=p;
+if(oppPkmn&&battleFighters.indexOf(p)<0)battleFighters.push(p);
 updateStatus();
 log((forced?"":"돌아와, "+prev.name+"!\n")+"가라! "+p.name+"!");
 saveGame();
