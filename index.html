@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>포켓몬스터 더 레전드 로그라이크</title>
+<title>포켓몬스터 어나더 레전드 로그라이크</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'DungGeunMo','Courier New',monospace}
 body{background:#202020;color:#101010;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:12px}
@@ -193,8 +193,11 @@ var moveCache={};
 var legendaryIds=[144,145,146,150,243,244,245,249,250,377,378,379,380,381,382,383,384,480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,716,717,718,772,773,785,786,787,788,789,790,791,792,800,888,889,890,898,905,1001,1002,1003,1004,1007,1008,1014,1015,1016,1017,1024];
 var playerName="카이",playerPkmn=null,oppPkmn=null,caughtPokemon=[],floor=1,isProcessing=false,gameEnded=false;
 var battleFighters=[];
-var inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
-var itemNames=["상처약","좋은상처약","이상한사탕","몬스터볼","슈퍼볼","하이퍼볼","마스터볼"];
+var isRed=false,redParty=[],redIndex=0;
+function enemyPre(){return isRed?"레드의 ":"야생의 ";}
+function isInf(n){return cheatOn("CH77RSNO")||(n==="마스터볼"&&cheatOn("8201KX71"))||(n==="이상한사탕"&&cheatOn("8202KX71"));}
+var inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0,"기력의조각":2,"기력의덩어리":1};
+var itemNames=["상처약","좋은상처약","이상한사탕","몬스터볼","슈퍼볼","하이퍼볼","마스터볼","기력의조각","기력의덩어리"];
 
 /* ===== 경험치 / 진화 설정 =====
    경험치 곡선: 레벨 n에 필요한 누적 경험치 = n³ (본가 '보통' 곡선, 레벨 상한 없음)
@@ -480,7 +483,7 @@ return p;
 function saveGame(){
 try{
 if(!playerPkmn)return false;
-var data={version:4,playerName:playerName,floor:floor,activeIndex:caughtPokemon.indexOf(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,savedAt:Date.now()};
+var data={version:4,playerName:playerName,floor:floor,activeIndex:caughtPokemon.indexOf(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,red:(isRed?{idx:redIndex,party:redParty.map(serializePokemon)}:null),savedAt:Date.now()};
 localStorage.setItem(SAVE_KEY,JSON.stringify(data));
 updateSaveStatus("💾 자동 저장 완료 · "+new Date().toLocaleTimeString());
 return true;
@@ -510,6 +513,12 @@ if(!caughtPokemon.length)return false;
 playerPkmn=caughtPokemon[idx];
 oppPkmn=await restorePokemon(d.oppPkmn);
 battleFighters=[playerPkmn];
+isRed=false;redParty=[];redIndex=0;
+if(d.red&&d.red.party&&d.red.party.length){
+var rp=[];
+for(var j=0;j<d.red.party.length;j++){var q=await restorePokemon(d.red.party[j]);if(q)rp.push(q);}
+if(rp.length){redParty=rp;redIndex=Math.min(Math.max(0,Number(d.red.idx)||0),rp.length-1);isRed=true;oppPkmn=rp[redIndex];}
+}
 inventory={};
 itemNames.forEach(function(n){var v=Number(d.inventory&&d.inventory[n]);inventory[n]=Number.isFinite(v)?Math.max(0,Math.floor(v)):0;});
 gameEnded=!!d.gameEnded;
@@ -526,8 +535,8 @@ if(saveGame())log("💾 저장 완료!\n현재 진행 상황이 저장되었습�
 function resetSave(){
 if(!confirm("정말 세이브를 초기화할까요? 모든 진행 상황이 삭제됩니다!"))return;
 localStorage.removeItem(SAVE_KEY);
-playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;
-inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0};
+playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;isRed=false;redParty=[];
+inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0,"기력의조각":2,"기력의덩어리":1};
 document.getElementById("player-name-input").value="";
 document.getElementById("floor-display").innerText="🏰 준비 중";
 document.getElementById("opp-name").innerText="야생 포켓몬";
@@ -548,7 +557,7 @@ updateSaveStatus("세이브 데이터 없음");
 function updateInfo(){
 var s="🎒 ";
 itemNames.forEach(function(n){
-var inf=(n==="마스터볼"&&cheatOn("8201KX71"))||(n==="이상한사탕"&&cheatOn("8202KX71"));
+var inf=isInf(n);
 s+=n+" "+(inf?"∞":inventory[n])+"개  ";
 });
 document.getElementById("info").innerText=s;
@@ -568,7 +577,7 @@ var cur=Math.max(0,playerPkmn.exp-lvStart);
 document.getElementById("player-exp-bar").style.width=Math.min(100,cur/lvNeed*100)+"%";
 document.getElementById("player-exp-text").innerText="EXP "+cur+" / "+lvNeed;
 if(oppPkmn){
-document.getElementById("opp-name").innerText=(oppPkmn.legendary?"⭐ ":"")+oppPkmn.name;
+document.getElementById("opp-name").innerText=(isRed?"🔴 레드의 ":"")+(oppPkmn.legendary?"⭐ ":"")+oppPkmn.name;
 document.getElementById("opp-level").innerText="Lv."+oppPkmn.level+(oppPkmn.legendary?" 전설":"");
 document.getElementById("opp-hp-text").innerText=oppPkmn.hp+"/"+oppPkmn.maxHp;
 var o=oppPkmn.hp/oppPkmn.maxHp*100;
@@ -613,6 +622,7 @@ return await getPokemonData(Math.floor(Math.random()*1025)+1);
 
 async function startFloor(){
 if(!playerPkmn)return;
+if(cheatOn("KO01SAGA")&&!isRed){await startRedEvent();return;}
 try{
 var d=await pickWildData();
 // 레벨 상한 없음: 층이 올라갈수록 적도 계속 강해진다
@@ -632,8 +642,47 @@ showSection("action-menu");
 }
 }
 
+/* ===== 레드 배틀 이벤트 (치트 KO01SAGA) : 하트골드/소울실버 레드 파티 ===== */
+async function startRedEvent(){
+isProcessing=true;showSection(null);
+try{
+log("📡 ...");
+var team=[[25,81],[196,73],[143,75],[3,77],[6,77],[9,77]];
+var party=[];
+for(var i=0;i<team.length;i++){var d=await getPokemonData(team[i][0]);party.push(new Pokemon(d,team[i][1]));}
+redParty=party;redIndex=0;isRed=true;oppPkmn=party[0];battleFighters=[playerPkmn];
+savedCheats["KO01SAGA"]=false;storeCheats();
+document.getElementById("floor-display").innerText="🔴 레드 배틀";
+updateStatus();
+log("레드: ... ... ... ... ...");
+await delay(1800);
+log("앗! 레드가 배틀을 걸어왔다!");
+await delay(1500);
+log("레드는 "+oppPkmn.name+"을(를) 내보냈다!\n가라! "+playerPkmn.name+"!");
+saveGame();
+isProcessing=false;showSection("action-menu");
+}catch(e){
+console.error(e);
+isRed=false;redParty=[];
+savedCheats["KO01SAGA"]=false;storeCheats();
+isProcessing=false;
+log("레드 이벤트 데이터를 불러오지 못했습니다.\n인터넷 연결을 확인해 주세요.");
+await startFloor();
+}
+}
+
+function finishRed(){
+isProcessing=true;
+isRed=false;redParty=[];
+inventory["이상한사탕"]+=3;inventory["기력의덩어리"]+=1;
+log("레드: ...\n🏆 레드와의 배틀에서 승리했다!\n🎁 보상: 이상한사탕 × 3, 기력의덩어리 × 1");
+oppPkmn=null;
+updateInfo();saveGame();
+setTimeout(function(){isProcessing=false;startFloor();},2800);
+}
+
 function giveFloorReward(){
-var a=[["상처약",3],["좋은상처약",2],["이상한사탕",2],["몬스터볼",5],["슈퍼볼",3],["하이퍼볼",2],["마스터볼",1]];
+var a=[["상처약",3],["좋은상처약",2],["이상한사탕",2],["몬스터볼",5],["슈퍼볼",3],["하이퍼볼",2],["마스터볼",1],["기력의조각",2],["기력의덩어리",1]];
 var r=a[Math.floor(Math.random()*a.length)];
 inventory[r[0]]+=r[1];
 updateInfo();
@@ -687,11 +736,11 @@ return {damage:Math.max(1,Math.floor(base*stab*e*(crit?1.5:1)*(.9+Math.random()*
 }
 
 async function executeAttack(a,d,n,isPlayer){
-log("▶ "+(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!");
+log("▶ "+(isPlayer?playerName+"의 ":enemyPre())+a.name+"의 "+n+"!");
 await delay(350);
 var r=calculateDamage(a,d,n);
 if(!(isPartyMon(d)&&cheatOn("ID000000")))d.hp=Math.max(0,d.hp-r.damage);
-var s=(isPlayer?playerName+"의 ":"야생의 ")+a.name+"의 "+n+"!\n";
+var s=(isPlayer?playerName+"의 ":enemyPre())+a.name+"의 "+n+"!\n";
 if(r.typeEff>=2)s+="효과는 굉장했다!\n";
 else if(r.typeEff>0&&r.typeEff<=.5)s+="효과는 별로인 듯하다...\n";
 else if(r.typeEff===0)s+="효과가 없는 듯하다!\n";
@@ -732,10 +781,21 @@ await executeAttack(playerPkmn,oppPkmn,n,true);
 if(oppPkmn.isFainted()){
 log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!");
 await delay(700);
-var expMsg=await awardExp(oppPkmn,1);
+var expMsg=await awardExp(oppPkmn,isRed?1.5:1);
 log("🎉 "+oppPkmn.name+"이(가) 쓰러졌다!\n"+expMsg);
 saveGame();
 await delay(2200);
+if(isRed){
+if(redIndex<redParty.length-1){
+redIndex++;oppPkmn=redParty[redIndex];battleFighters=[playerPkmn];
+updateStatus();
+log("레드는 "+oppPkmn.name+"을(를) 내보냈다!");
+saveGame();
+await delay(1200);
+isProcessing=false;showSection("action-menu");return;
+}
+finishRed();return;
+}
 isProcessing=false;clearFloor();return;
 }
 await enemyTurn();
@@ -747,12 +807,13 @@ saveGame();
 
 async function catchPokemon(){
 if(isProcessing||gameEnded||!oppPkmn)return;
+if(isRed){log("트레이너의 포켓몬은 잡을 수 없다!");return;}
 isProcessing=true;showSection(null);
 var bs=[["마스터볼",999],["하이퍼볼",2.5],["슈퍼볼",1.6],["몬스터볼",1]],ball="",mult=1;
-if(cheatOn("8201KX71")){ball="마스터볼";mult=999;}
+if(isInf("마스터볼")){ball="마스터볼";mult=999;}
 else for(var i=0;i<bs.length;i++){if(inventory[bs[i][0]]>0){ball=bs[i][0];mult=bs[i][1];break;}}
 if(!ball){log("포켓몬볼이 없습니다!");isProcessing=false;showSection("action-menu");return;}
-if(!cheatOn("8201KX71"))inventory[ball]--;
+if(!isInf(ball))inventory[ball]--;
 updateInfo();saveGame();
 log("🎯 "+ball+"을(를) 던졌다!");
 await delay(600);
@@ -787,10 +848,10 @@ if(c===null)return;
 var i=parseInt(c)-1;
 if(isNaN(i)||i<0||i>=itemNames.length){log("잘못된 선택입니다.");return;}
 var n=itemNames[i];
-if(inventory[n]<=0&&!(n==="이상한사탕"&&cheatOn("8202KX71"))){log(n+"이(가) 없습니다!");return;}
+if(inventory[n]<=0&&!isInf(n)){log(n+"이(가) 없습니다!");return;}
 if(n==="상처약"||n==="좋은상처약"){
 if(playerPkmn.hp>=playerPkmn.maxHp){log("HP가 이미 가득 찼습니다!");return;}
-inventory[n]--;
+if(!isInf(n))inventory[n]--;
 var before=playerPkmn.hp;
 playerPkmn.hp=Math.min(playerPkmn.maxHp,playerPkmn.hp+(n==="상처약"?50:100));
 updateStatus();
@@ -799,7 +860,7 @@ saveGame();
 return;
 }
 if(n==="이상한사탕"){
-if(!cheatOn("8202KX71"))inventory[n]--;
+if(!isInf(n))inventory[n]--;
 // 이상한사탕: 다음 레벨의 시작 경험치까지 곧바로 채워준다 (레벨 +1)
 addExp(playerPkmn,expForLevel(playerPkmn.level+1)-playerPkmn.exp);
 playerPkmn.hp=playerPkmn.maxHp;
@@ -810,6 +871,24 @@ var target=playerPkmn;
 tryEvolve(target).then(function(msgs){
 if(msgs.length){updateStatus();log("🍬 이상한사탕 사용!\n"+msgs.join("\n"));saveGame();}
 });
+return;
+}
+// 기력의조각(HP 절반으로 부활) / 기력의덩어리(HP 전부 회복하며 부활)
+if(n==="기력의조각"||n==="기력의덩어리"){
+var fainted=caughtPokemon.filter(function(p){return p.isFainted();});
+if(!fainted.length){log("기절한 포켓몬이 없습니다!");return;}
+var t="💫 "+n+" - 되살릴 포켓몬 번호\n\n";
+fainted.forEach(function(p,k){t+=(k+1)+". "+p.name+" Lv."+p.level+"\n";});
+var c2=prompt(t);
+if(c2===null)return;
+var k2=parseInt(c2)-1;
+if(isNaN(k2)||k2<0||k2>=fainted.length){log("잘못된 선택입니다.");return;}
+var tg=fainted[k2];
+if(!isInf(n))inventory[n]--;
+tg.hp=(n==="기력의덩어리")?tg.maxHp:Math.max(1,Math.floor(tg.maxHp/2));
+updateStatus();
+log("💫 "+n+" 사용!\n"+tg.name+"이(가) 기력을 되찾았다!\nHP "+tg.hp+"/"+tg.maxHp);
+saveGame();
 return;
 }
 log("포획용 볼은 포획하기 버튼을 누르면 자동으로 사용됩니다.");
@@ -856,6 +935,7 @@ saveGame();
 
 function runAway(){
 if(isProcessing||gameEnded)return;
+if(isRed){log("트레이너와의 배틀에서는 도망칠 수 없다!");return;}
 isProcessing=true;
 floor=Math.max(1,floor-1);
 log("🏃 무사히 도망쳤습니다!\n한 층 내려갑니다!");
@@ -865,7 +945,7 @@ setTimeout(function(){isProcessing=false;startFloor();},800);
 }
 
 function gameOver(){
-isProcessing=false;gameEnded=true;
+isProcessing=false;gameEnded=true;isRed=false;redParty=[];
 log("💀 파티가 전멸했습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
 showSection("restart-menu");
 saveGame();
@@ -876,14 +956,14 @@ if(!caughtPokemon.length){showSection("setup-starter");return;}
 floor=1;
 caughtPokemon.forEach(function(p){p.hp=p.maxHp;});
 playerPkmn=caughtPokemon[0];
-oppPkmn=null;gameEnded=false;isProcessing=false;
+oppPkmn=null;gameEnded=false;isProcessing=false;isRed=false;redParty=[];
 log("🔄 새로운 도전을 시작합니다!\n파티 전원이 회복되었습니다.");
 startFloor();
 }
 
 /* ===== 이스터에그: 화면을 꾹 누른 뒤 5번 연속 터치 → 치트창 ===== */
 var CHEAT_KEY="pokemon_roguelike_cheats_v1";
-var CHEATS={"8201KX71":"마스터볼 무한","8202KX71":"이상한사탕 무한","SA01YT1N":"전설 포켓몬 등장","ID000000":"레벨·체력 무한"};
+var CHEATS={"8201KX71":"마스터볼 무한","8202KX71":"이상한사탕 무한","SA01YT1N":"전설 포켓몬 등장","ID000000":"레벨·체력 무한","CH77RSNO":"모든 아이템 무한","KO01SAGA":"레드 배틀 이벤트"};
 var savedCheats={};
 function loadCheats(){try{savedCheats=JSON.parse(localStorage.getItem(CHEAT_KEY)||"{}")||{};}catch(e){savedCheats={};}}
 function storeCheats(){try{localStorage.setItem(CHEAT_KEY,JSON.stringify(savedCheats));}catch(e){}}
@@ -929,7 +1009,10 @@ storeCheats();renderCheatPanel();applyCheatChange();
 }
 
 function openCheat(){renderCheatPanel();document.getElementById("cheat-overlay").classList.remove("hidden");}
-function closeCheat(){document.getElementById("cheat-overlay").classList.add("hidden");}
+function closeCheat(){
+document.getElementById("cheat-overlay").classList.add("hidden");
+if(cheatOn("KO01SAGA")&&playerPkmn&&oppPkmn&&!isProcessing&&!gameEnded&&!isRed&&!playerPkmn.isFainted())startFloor();
+}
 function cheatPanelOpen(){return !document.getElementById("cheat-overlay").classList.contains("hidden");}
 
 var egg={holdTimer:null,expire:null,armed:false,taps:0,blockUntil:0};
@@ -960,7 +1043,7 @@ async function initializeGame(){
 readCache();
 var ok=await loadGame();
 if(ok){
-document.getElementById("floor-display").innerText="🏰 "+floor+"층";
+document.getElementById("floor-display").innerText=isRed?"🔴 레드 배틀":"🏰 "+floor+"층";
 updateInfo();
 if(gameEnded){
 updateStatus();
