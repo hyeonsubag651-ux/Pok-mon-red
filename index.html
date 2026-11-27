@@ -193,7 +193,7 @@ var moveCache={};
 var legendaryIds=[144,145,146,150,243,244,245,249,250,377,378,379,380,381,382,383,384,480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,716,717,718,772,773,785,786,787,788,789,790,791,792,800,888,889,890,898,905,1001,1002,1003,1004,1007,1008,1014,1015,1016,1017,1024];
 var playerName="카이",playerPkmn=null,oppPkmn=null,caughtPokemon=[],floor=1,isProcessing=false,gameEnded=false;
 var battleFighters=[];
-var isTrainer=false,trainerId=null,trainerParty=[],trainerIndex=0;
+var isTrainer=false,trainerId=null,trainerParty=[],trainerIndex=0,trainerPhase=1;
 var RANDOM_TRAINER_RATE=0.10; // 일반 층에서 랜덤 트레이너를 만날 확률 (10%)
 /* ===== 트레이너 목록 =====
    random:true  → 일반 층에서 RANDOM_TRAINER_RATE 확률로 등장
@@ -201,6 +201,7 @@ var RANDOM_TRAINER_RATE=0.10; // 일반 층에서 랜덤 트레이너를 만날 
    team         → [도감번호, 레벨] 목록
    intro        → [대사, 대기 ms] 목록 (배틀 시작 전 연출)
    reward       → 클리어 보상 아이템
+   phase2       → (선택) 1페이즈 전원 격파 후 이어지는 2페이즈. team/intro/sendOut/win/reward 형식은 동일
    새 트레이너를 추가할 땐 여기에 항목을 만들고, 아래 BGM_TRACKS에 같은 ID로 곡을 등록하세요. */
 var TRAINERS={
 "red":{name:"레드",emoji:"🔴",random:true,fixedFloor:0,
@@ -209,7 +210,13 @@ expMult:1.5,
 intro:[["레드: ... ... ... ... ...",1800],["앗! 레드가 배틀을 걸어왔다!",1500]],
 sendOut:"레드는 {p}을(를) 내보냈다!",
 win:"레드: ...\n🏆 레드와의 배틀에서 승리했다!",
-reward:{"이상한사탕":3,"기력의덩어리":1}},
+reward:{"이상한사탕":3,"기력의덩어리":1},
+phase2:{
+team:[[150,251],[249,251],[146,251],[144,251],[145,251],[250,251]],
+intro:[["레드: ... ... ... ... ... ......",2800]],
+sendOut:"레드는 {p}{를} 내보냈다..!",
+win:"레드: ...\n🏆 전설의 레드를 쓰러뜨렸다!",
+reward:{"이상한사탕":10,"기력의덩어리":3,"마스터볼":3}}},
 "n":{name:"N",emoji:"🟢",random:false,fixedFloor:777,
 team:[[571,420],[565,420],[646,420],[644,420],[643,420]],
 expMult:1.5,
@@ -508,7 +515,7 @@ return p;
 function saveGame(){
 try{
 if(!playerPkmn)return false;
-var data={version:4,playerName:playerName,floor:floor,activeIndex:caughtPokemon.indexOf(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,trainer:(isTrainer?{id:trainerId,idx:trainerIndex,party:trainerParty.map(serializePokemon)}:null),savedAt:Date.now()};
+var data={version:4,playerName:playerName,floor:floor,activeIndex:caughtPokemon.indexOf(playerPkmn),oppPkmn:serializePokemon(oppPkmn),caughtPokemon:caughtPokemon.map(serializePokemon),inventory:inventory,gameEnded:gameEnded,trainer:(isTrainer?{id:trainerId,idx:trainerIndex,phase:trainerPhase,party:trainerParty.map(serializePokemon)}:null),savedAt:Date.now()};
 localStorage.setItem(SAVE_KEY,JSON.stringify(data));
 updateSaveStatus("💾 자동 저장 완료 · "+new Date().toLocaleTimeString());
 return true;
@@ -538,12 +545,12 @@ if(!caughtPokemon.length)return false;
 playerPkmn=caughtPokemon[idx];
 oppPkmn=await restorePokemon(d.oppPkmn);
 battleFighters=[playerPkmn];
-isTrainer=false;trainerId=null;trainerParty=[];trainerIndex=0;
+isTrainer=false;trainerId=null;trainerParty=[];trainerIndex=0;trainerPhase=1;
 var td=d.trainer||(d.red?{id:"red",idx:d.red.idx,party:d.red.party}:null);
 if(td&&TRAINERS[td.id]&&td.party&&td.party.length){
 var rp=[];
 for(var j=0;j<td.party.length;j++){var q=await restorePokemon(td.party[j]);if(q)rp.push(q);}
-if(rp.length){trainerId=td.id;trainerParty=rp;trainerIndex=Math.min(Math.max(0,Number(td.idx)||0),rp.length-1);isTrainer=true;oppPkmn=rp[trainerIndex];}
+if(rp.length){trainerId=td.id;trainerParty=rp;trainerIndex=Math.min(Math.max(0,Number(td.idx)||0),rp.length-1);trainerPhase=Number(td.phase)||1;isTrainer=true;oppPkmn=rp[trainerIndex];}
 }
 inventory={};
 itemNames.forEach(function(n){var v=Number(d.inventory&&d.inventory[n]);inventory[n]=Number.isFinite(v)?Math.max(0,Math.floor(v)):0;});
@@ -561,7 +568,7 @@ if(saveGame())log("💾 저장 완료!\n현재 진행 상황이 저장되었습�
 function resetSave(){
 if(!confirm("정말 세이브를 초기화할까요? 모든 진행 상황이 삭제됩니다!"))return;
 localStorage.removeItem(SAVE_KEY);
-playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;isTrainer=false;trainerId=null;trainerParty=[];
+playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
 inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0,"기력의조각":2,"기력의덩어리":1};
 document.getElementById("player-name-input").value="";
 document.getElementById("floor-display").innerText="🏰 준비 중";
@@ -692,7 +699,7 @@ document.getElementById("opp-hp-text").innerText="--/--";
 document.getElementById("opp-hp-bar").style.width="100%";
 saveGame();
 for(var j=0;j<T.intro.length;j++){log(T.intro[j][0]);await delay(T.intro[j][1]);}
-trainerId=id;trainerParty=party;trainerIndex=0;isTrainer=true;
+trainerId=id;trainerParty=party;trainerIndex=0;trainerPhase=1;isTrainer=true;
 oppPkmn=party[0];battleFighters=[playerPkmn];
 updateStatus();
 log(T.sendOut.replace("{p}",oppPkmn.name)+"\n가라! "+playerPkmn.name+"!");
@@ -700,20 +707,50 @@ saveGame();
 isProcessing=false;showSection("action-menu");
 }catch(e){
 console.error(e);
-isTrainer=false;trainerId=null;trainerParty=[];oppPkmn=null;
+isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;oppPkmn=null;
 isProcessing=false;
 log("트레이너 데이터를 불러오지 못했습니다.\n인터넷 연결을 확인해 주세요.");
 await startFloor(true);
 }
 }
 
+// 받침 유무에 따라 을/를 반환
+function josa(w){var c=w.charCodeAt(w.length-1)-44032;return (c>=0&&c<11172&&c%28!==0)?"을":"를";}
+
+// 레드 2페이즈 시작: 브금을 2번 곡으로 바꾸고 새 파티를 내보낸다
+async function startPhase2(){
+var T=curTrainer(),P=T.phase2;
+isProcessing=true;showSection(null);
+trainerPhase=2;bgmStop();bgmTry();
+try{
+var party=[];
+for(var i=0;i<P.team.length;i++){var d=await getPokemonData(P.team[i][0]);party.push(new Pokemon(d,P.team[i][1]));}
+trainerParty=party;trainerIndex=0;oppPkmn=party[0];battleFighters=[playerPkmn];
+document.getElementById("opp-name").innerText=T.emoji+" "+T.name;
+document.getElementById("opp-level").innerText="";
+document.getElementById("opp-hp-text").innerText="--/--";
+document.getElementById("opp-hp-bar").style.width="100%";
+saveGame();
+for(var j=0;j<P.intro.length;j++){log(P.intro[j][0]);await delay(P.intro[j][1]);}
+updateStatus();
+log(P.sendOut.replace("{p}",oppPkmn.name).replace("{를}",josa(oppPkmn.name)));
+saveGame();
+await delay(1500);
+}catch(e){
+console.error(e);
+log("2페이즈 데이터를 불러오지 못했습니다.\n인터넷 연결을 확인해 주세요.");
+}
+isProcessing=false;showSection("action-menu");
+}
+
 function finishTrainer(){
 var T=curTrainer();
+var P=(T&&trainerPhase===2&&T.phase2)?T.phase2:T;
 isProcessing=true;
 var rs=[];
-if(T)Object.keys(T.reward).forEach(function(k){inventory[k]=(inventory[k]||0)+T.reward[k];rs.push(k+" × "+T.reward[k]);});
-isTrainer=false;trainerId=null;trainerParty=[];
-log((T?T.win:"🏆 승리!")+"\n🎁 보상: "+rs.join(", "));
+if(P)Object.keys(P.reward).forEach(function(k){inventory[k]=(inventory[k]||0)+P.reward[k];rs.push(k+" × "+P.reward[k]);});
+isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
+log((P?P.win:"🏆 승리!")+"\n🎁 보상: "+rs.join(", "));
 oppPkmn=null;
 updateInfo();saveGame();
 setTimeout(function(){floor++;isProcessing=false;startFloor();},2800);
@@ -827,11 +864,14 @@ if(isTrainer){
 if(trainerIndex<trainerParty.length-1){
 trainerIndex++;oppPkmn=trainerParty[trainerIndex];battleFighters=[playerPkmn];
 updateStatus();
-log(curTrainer().sendOut.replace("{p}",oppPkmn.name));
+var Tn=curTrainer();
+var so=(trainerPhase===2&&Tn.phase2)?Tn.phase2.sendOut:Tn.sendOut;
+log(so.replace("{p}",oppPkmn.name).replace("{를}",josa(oppPkmn.name)));
 saveGame();
 await delay(1200);
 isProcessing=false;showSection("action-menu");return;
 }
+if(trainerPhase===1&&curTrainer().phase2){await startPhase2();return;}
 finishTrainer();return;
 }
 isProcessing=false;clearFloor();return;
@@ -983,7 +1023,7 @@ setTimeout(function(){isProcessing=false;startFloor();},800);
 }
 
 function gameOver(){
-isProcessing=false;gameEnded=true;isTrainer=false;trainerId=null;trainerParty=[];
+isProcessing=false;gameEnded=true;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
 log("💀 파티가 전멸했습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
 showSection("restart-menu");
 saveGame();
@@ -994,7 +1034,7 @@ if(!caughtPokemon.length){showSection("setup-starter");return;}
 floor=1;
 caughtPokemon.forEach(function(p){p.hp=p.maxHp;});
 playerPkmn=caughtPokemon[0];
-oppPkmn=null;gameEnded=false;isProcessing=false;isTrainer=false;trainerId=null;trainerParty=[];
+oppPkmn=null;gameEnded=false;isProcessing=false;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
 log("🔄 새로운 도전을 시작합니다!\n파티 전원이 회복되었습니다.");
 startFloor();
 }
@@ -1077,14 +1117,16 @@ if(egg.armed||Date.now()<egg.blockUntil){e.stopPropagation();e.preventDefault();
 document.addEventListener("contextmenu",function(e){if(egg.armed||egg.holdTimer)e.preventDefault();});
 
 /* ===== 트레이너 브금 =====
-   트레이너 배틀 중 화면/버튼을 한 번 터치하면 해당 트레이너의 1번 곡 재생 → 끝났는데도 배틀 중이면 2번 곡 → 이후 번갈아 반복.
-   배틀이 끝나거나 게임오버/리셋되면 자동 정지.
-   새 트레이너 브금은 TRAINERS의 ID와 같은 이름으로 여기에 곡 목록을 추가하세요. (빈 배열 = 브금 없음) */
+   트레이너 배틀 중 화면/버튼을 한 번 터치하면 곡이 재생되고, 끝났는데도 배틀 중이면 같은 목록의 다음 곡 → 이후 반복.
+   2페이즈는 "트레이너ID#2" 키로 따로 등록합니다. (예: "red#2")
+   배틀이 끝나거나 게임오버/리셋되면 자동 정지. (빈 배열 = 브금 없음) */
 var BGM_TRACKS={
-"red":["red_battle_1.mp3","red_battle_2.mp3"],
+"red":["red_battle_1.mp3"],
+"red#2":["red_battle_2.mp3"],
 "n":["N_battle_bgm.mp3"]
 };
 var bgmEls={},bgmOn=false,bgmIdx=0,bgmBusy=false,bgmId=null;
+function bgmKey(){return trainerId+(trainerPhase>1?"#"+trainerPhase:"");}
 function bgmInit(){
 Object.keys(BGM_TRACKS).forEach(function(id){
 bgmEls[id]=BGM_TRACKS[id].map(function(s,i){
@@ -1095,7 +1137,7 @@ return a;
 });
 }
 function bgmNext(id,i){
-if(!isTrainer||!bgmOn||trainerId!==id)return;
+if(!isTrainer||!bgmOn||bgmKey()!==id)return;
 var list=bgmEls[id];
 bgmIdx=(i+1)%list.length;
 var n=list[bgmIdx];n.currentTime=0;
@@ -1103,9 +1145,9 @@ var p=n.play();if(p&&p.catch)p.catch(function(){bgmOn=false;});
 }
 function bgmTry(){
 if(!isTrainer||bgmOn||bgmBusy)return;
-var list=bgmEls[trainerId];
+var key=bgmKey(),list=bgmEls[key];
 if(!list||!list.length)return;
-bgmBusy=true;bgmIdx=0;bgmId=trainerId;
+bgmBusy=true;bgmIdx=0;bgmId=key;
 var a=list[0];a.currentTime=0;
 var p=a.play();
 if(p&&p.then){p.then(function(){bgmOn=true;bgmBusy=false;}).catch(function(){bgmOn=false;bgmBusy=false;});}
@@ -1117,7 +1159,7 @@ Object.keys(bgmEls).forEach(function(id){bgmEls[id].forEach(function(a){a.pause(
 }
 ["pointerdown","touchend","click"].forEach(function(t){document.addEventListener(t,bgmTry,true);});
 setInterval(function(){
-if(isTrainer){if(bgmOn&&bgmId!==trainerId)bgmStop();else bgmTry();}
+if(isTrainer){if(bgmOn&&bgmId!==bgmKey())bgmStop();else bgmTry();}
 else if(bgmOn)bgmStop();
 },500);
 document.addEventListener("visibilitychange",function(){
