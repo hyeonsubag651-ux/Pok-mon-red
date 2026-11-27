@@ -215,6 +215,7 @@ var battleFighters=[];
 var pcBox=[]; // PC 박스 (보관 중인 포켓몬, 개수 제한 없음)
 var PC_PAGE=8; // PC 목록 한 페이지에 보여줄 마리 수
 var isTrainer=false,trainerId=null,trainerParty=[],trainerIndex=0,trainerPhase=1;
+var inCenter=false; // 포켓몬센터 안에 있는지 (센터 브금용)
 var RANDOM_TRAINER_RATE=0.10; // 일반 층에서 랜덤 트레이너를 만날 확률 (10%)
 /* ===== 트레이너 목록 =====
    random:true  → 일반 층에서 RANDOM_TRAINER_RATE 확률로 등장
@@ -595,7 +596,7 @@ if(saveGame())log("💾 저장 완료!\n현재 진행 상황이 저장되었습�
 function resetSave(){
 if(!confirm("정말 세이브를 초기화할까요? 모든 진행 상황이 삭제됩니다!"))return;
 localStorage.removeItem(SAVE_KEY);
-playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];pcBox=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
+playerName="카이";playerPkmn=null;oppPkmn=null;caughtPokemon=[];pcBox=[];battleFighters=[];floor=1;isProcessing=false;gameEnded=false;isTrainer=false;inCenter=false;trainerId=null;trainerParty=[];trainerPhase=1;
 inventory={"상처약":5,"좋은상처약":2,"이상한사탕":2,"몬스터볼":10,"슈퍼볼":2,"하이퍼볼":0,"마스터볼":0,"기력의조각":2,"기력의덩어리":1};
 document.getElementById("player-name-input").value="";
 document.getElementById("floor-display").innerText="🏰 준비 중";
@@ -682,6 +683,7 @@ return await getPokemonData(Math.floor(Math.random()*1025)+1);
 
 async function startFloor(skipTrainer,skipCenter){
 if(!playerPkmn)return;
+inCenter=false; // 센터 브금 종료 (센터에 들어가면 enterCenter에서 다시 켜짐)
 if(!skipTrainer&&!skipCenter&&!isTrainer&&floor%77===0&&floor%100!==0){enterCenter();return;}
 if(!skipTrainer&&!isTrainer){
 var tid=null;
@@ -787,9 +789,11 @@ setTimeout(function(){floor++;isProcessing=false;startFloor();},2800);
 
 /* ===== 포켓몬센터 (77층마다) =====
    간호순이 파티와 PC 박스의 포켓몬을 전부 회복해 주고, PC 박스에 포켓몬을 맡기거나 꺼낼 수 있다.
-   파티 인원 제한은 없고, 맡기기는 플레이어가 원할 때만 한다. (파티에는 최소 1마리가 남아야 함) */
+   파티 인원 제한은 없고, 맡기기는 플레이어가 원할 때만 한다. (파티에는 최소 1마리가 남아야 함)
+   센터에 있는 동안은 화면을 한 번 터치하면 77_Poke_Center.mp3 브금이 재생된다. */
 function enterCenter(){
 isProcessing=false;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
+inCenter=true;
 oppPkmn=null;battleFighters=[playerPkmn];
 document.getElementById("floor-display").innerText="🏥 "+floor+"층 · 포켓몬센터";
 document.getElementById("opp-name").innerText="👩‍⚕️ 간호순";
@@ -875,6 +879,7 @@ showPcList("withdraw",page);
 function leaveCenter(){
 if(isProcessing)return;
 isProcessing=true;showSection(null);
+inCenter=false; // 센터 브금 정지
 log("👩‍⚕️ 간호순: 안녕히 가세요! 몸조심하세요!");
 // 센터 층에 고정 트레이너(예: 7777층 N)가 있으면 층을 올리지 않고 센터 다음에 바로 그 배틀을 시작
 var hasFixed=Object.keys(TRAINERS).some(function(k){return TRAINERS[k].fixedFloor===floor;});
@@ -1152,7 +1157,7 @@ setTimeout(function(){isProcessing=false;startFloor();},800);
 }
 
 function gameOver(){
-isProcessing=false;gameEnded=true;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
+isProcessing=false;gameEnded=true;isTrainer=false;inCenter=false;trainerId=null;trainerParty=[];trainerPhase=1;
 log("💀 파티가 전멸했습니다!\n도전 종료!\n최종 도달 층수: "+floor+"층\n포획한 포켓몬: "+caughtPokemon.length+"마리");
 showSection("restart-menu");
 saveGame();
@@ -1163,7 +1168,7 @@ if(!caughtPokemon.length){showSection("setup-starter");return;}
 floor=1;
 caughtPokemon.forEach(function(p){p.hp=p.maxHp;});
 playerPkmn=caughtPokemon[0];
-oppPkmn=null;gameEnded=false;isProcessing=false;isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
+oppPkmn=null;gameEnded=false;isProcessing=false;isTrainer=false;inCenter=false;trainerId=null;trainerParty=[];trainerPhase=1;
 log("🔄 새로운 도전을 시작합니다!\n파티 전원이 회복되었습니다.");
 startFloor();
 }
@@ -1262,17 +1267,21 @@ if(egg.armed||Date.now()<egg.blockUntil){e.stopPropagation();e.preventDefault();
 },true);
 document.addEventListener("contextmenu",function(e){if(egg.armed||egg.holdTimer)e.preventDefault();});
 
-/* ===== 트레이너 브금 =====
-   트레이너 배틀 중 화면/버튼을 한 번 터치하면 곡이 재생되고, 끝났는데도 배틀 중이면 같은 목록의 다음 곡 → 이후 반복.
+/* ===== 브금 (트레이너 배틀 / 포켓몬센터) =====
+   트레이너 배틀 중이거나 포켓몬센터에 있을 때, 화면/버튼을 한 번 터치하면 곡이 재생되고,
+   곡이 끝났는데도 같은 상태면 같은 목록의 다음 곡 → 이후 반복.
    2페이즈는 "트레이너ID#2" 키로 따로 등록합니다. (예: "red#2")
-   배틀이 끝나거나 게임오버/리셋되면 자동 정지. (빈 배열 = 브금 없음) */
+   포켓몬센터는 "center" 키를 씁니다.
+   배틀이 끝나거나 센터를 나서거나 게임오버/리셋되면 자동 정지. (빈 배열 = 브금 없음) */
 var BGM_TRACKS={
 "red":["red_battle_1.mp3"],
 "red#2":["red_battle_2.mp3"],
-"n":["N_battle_bgm.mp3"]
+"n":["N_battle_bgm.mp3"],
+"center":["77_Poke_Center.mp3"]
 };
 var bgmEls={},bgmOn=false,bgmIdx=0,bgmBusy=false,bgmId=null;
-function bgmKey(){return trainerId+(trainerPhase>1?"#"+trainerPhase:"");}
+function bgmActive(){return isTrainer||inCenter;}
+function bgmKey(){return inCenter?"center":trainerId+(trainerPhase>1?"#"+trainerPhase:"");}
 function bgmInit(){
 Object.keys(BGM_TRACKS).forEach(function(id){
 bgmEls[id]=BGM_TRACKS[id].map(function(s,i){
@@ -1283,14 +1292,14 @@ return a;
 });
 }
 function bgmNext(id,i){
-if(!isTrainer||!bgmOn||bgmKey()!==id)return;
+if(!bgmActive()||!bgmOn||bgmKey()!==id)return;
 var list=bgmEls[id];
 bgmIdx=(i+1)%list.length;
 var n=list[bgmIdx];n.currentTime=0;
 var p=n.play();if(p&&p.catch)p.catch(function(){bgmOn=false;});
 }
 function bgmTry(){
-if(!isTrainer||bgmOn||bgmBusy)return;
+if(!bgmActive()||bgmOn||bgmBusy)return;
 var key=bgmKey(),list=bgmEls[key];
 if(!list||!list.length)return;
 bgmBusy=true;bgmIdx=0;bgmId=key;
@@ -1305,7 +1314,7 @@ Object.keys(bgmEls).forEach(function(id){bgmEls[id].forEach(function(a){a.pause(
 }
 ["pointerdown","touchend","click"].forEach(function(t){document.addEventListener(t,bgmTry,true);});
 setInterval(function(){
-if(isTrainer){if(bgmOn&&bgmId!==bgmKey())bgmStop();else bgmTry();}
+if(bgmActive()){if(bgmOn&&bgmId!==bgmKey())bgmStop();else bgmTry();}
 else if(bgmOn)bgmStop();
 },500);
 document.addEventListener("visibilitychange",function(){
@@ -1313,7 +1322,7 @@ if(!bgmOn||!bgmEls[bgmId])return;
 var a=bgmEls[bgmId][bgmIdx];
 if(!a)return;
 if(document.visibilityState==="hidden")a.pause();
-else if(isTrainer){var p=a.play();if(p&&p.catch)p.catch(function(){});}
+else if(bgmActive()){var p=a.play();if(p&&p.catch)p.catch(function(){});}
 });
 
 async function initializeGame(){
