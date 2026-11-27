@@ -1170,7 +1170,7 @@ startFloor();
 
 /* ===== 이스터에그: 화면을 꾹 누른 뒤 5번 연속 터치 → 치트창 ===== */
 var CHEAT_KEY="pokemon_roguelike_cheats_v1";
-var CHEATS={"8201KX71":"마스터볼 무한","8202KX71":"이상한사탕 무한","SA01YT1N":"전설 포켓몬 등장","ID000000":"레벨·체력 무한","CH77RSNO":"모든 아이템 무한","CHEATS7777":"7777층으로 이동"};
+var CHEATS={"8201KX71":"마스터볼 무한","8202KX71":"이상한사탕 무한","SA01YT1N":"전설 포켓몬 등장","ID000000":"레벨·체력 무한","CH77RSNO":"모든 아이템 무한","CHEATS7777":"7777층으로 이동","200SAXZ99":"200층으로 이동"};
 var savedCheats={};
 function loadCheats(){try{savedCheats=JSON.parse(localStorage.getItem(CHEAT_KEY)||"{}")||{};}catch(e){savedCheats={};}delete savedCheats["KO01SAGA"];}
 function storeCheats(){try{localStorage.setItem(CHEAT_KEY,JSON.stringify(savedCheats));}catch(e){}}
@@ -1178,15 +1178,17 @@ function cheatOn(c){return savedCheats[c]===true;}
 function isPartyMon(p){return !!p&&caughtPokemon.indexOf(p)>=0;}
 loadCheats();
 
-// CHEATS7777: 7777층으로 이동 (한 번 이동하면 치트를 꺼도 그 층에서 계속 진행)
-function cheatJump(){
+// 층 이동 치트: 코드 → 이동할 층. 한 번 이동하면 치트를 꺼도 그 층에서 계속 진행
+var JUMP_CHEATS={"CHEATS7777":7777,"200SAXZ99":200};
+function cheatJump(code){
+var target=JUMP_CHEATS[code];
 if(!playerPkmn||gameEnded){alert("모험 중일 때만 사용할 수 있습니다.");return false;}
 if(isProcessing){alert("진행 중입니다. 잠시 후 다시 시도하세요.");return false;}
-floor=7777;
+floor=target;
 isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
 oppPkmn=null;battleFighters=[playerPkmn];
 closeCheat();
-log("🛠️ 7777층으로 이동합니다!");
+log("🛠️ "+target+"층으로 이동합니다!");
 showSection(null);
 startFloor();
 return true;
@@ -1210,7 +1212,7 @@ l.appendChild(e);return;
 keys.forEach(function(c){
 var row=document.createElement("div");row.className="cheat-row";
 var cb=document.createElement("input");cb.type="checkbox";cb.checked=savedCheats[c]===true;
-cb.onchange=function(){if(cb.checked&&c==="CHEATS7777"&&!cheatJump())cb.checked=false;savedCheats[c]=cb.checked;storeCheats();applyCheatChange();};
+cb.onchange=function(){if(cb.checked&&JUMP_CHEATS[c]&&!cheatJump(c))cb.checked=false;savedCheats[c]=cb.checked;storeCheats();applyCheatChange();};
 var nm=document.createElement("span");nm.className="cheat-name";nm.innerText=c+"\n"+(CHEATS[c]||"");nm.style.whiteSpace="pre-line";
 var del=document.createElement("button");del.innerText="✕";
 del.onclick=function(){delete savedCheats[c];storeCheats();renderCheatPanel();applyCheatChange();};
@@ -1225,7 +1227,7 @@ if(c===null)return;
 c=c.trim().toUpperCase();
 if(!Object.prototype.hasOwnProperty.call(CHEATS,c)){alert("올바르지 않은 코드입니다.");return;}
 if(Object.prototype.hasOwnProperty.call(savedCheats,c)){alert("이미 저장된 코드입니다.");return;}
-if(c==="CHEATS7777"&&!cheatJump())return;
+if(JUMP_CHEATS[c]&&!cheatJump(c))return;
 savedCheats[c]=true;
 storeCheats();renderCheatPanel();applyCheatChange();
 }
