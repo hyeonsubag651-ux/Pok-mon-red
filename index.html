@@ -251,12 +251,13 @@ reward:{"이상한사탕":5,"기력의덩어리":2,"마스터볼":2}},
    once:true      → 한 번 시작하면 다시는 나오지 않음
    minFloor/atFloor → 이 층에 도착하면 발동 (minFloor: 그 층 이상, atFloor: 정확히 그 층)
    noAdvance:true → 끝난 뒤 층수를 올리지 않고 원래 층을 이어서 진행 (끼어든 층)
-   floorLabel/preName/pre → 화면에 표시되는 층 이름 / 시작 전 상대 이름 / 공격 로그 앞말 */
-"arceus":{name:"아르세우스",pre:"",emoji:"⚪",random:false,fixedFloor:0,once:true,minFloor:159999,noAdvance:true,
+   floorLabel/preName/pre → 화면에 표시되는 층 이름 / 시작 전 상대 이름 / 공격 로그 앞말
+   introBgm:"키"  → 배틀 전 대사 중에만 화면을 터치하면 BGM_TRACKS의 그 키 곡을 1번 재생하고, 배틀이 시작되면 멈춘다 */
+"arceus":{name:"아르세우스",pre:"",emoji:"⚪",random:false,fixedFloor:0,once:true,minFloor:159999,noAdvance:true,introBgm:"arceus_intro",
 floorLabel:"❓ ???층",preName:"❓ ???",
 team:[[493,999999999]],
 expMult:1.5,
-intro:[["... ... ... ... ...",1800],["어라? ... 하얀 공간이다. 온통.. ... ... ... 피리소리가 울려퍼진다.. 어디서 울려 퍼지는것이지..?",2600],["쿠궁... 쿠구구궁—\n하얀 공간이 무너질 듯이 흔들린다..!",2600],["... !",1500],["!!! 아르세우스가 나타났다..!",2200]],
+intro:[["... ... ... ... ...",1800],["어라? ... 하얀 공간이다. 온통.. ... ... ... 피리소리가 울려퍼진다.. 어디서 울려 퍼지는것이지..?",4000],["쿠궁... 쿠구구궁—\n하얀 공간이 무너질 듯이 흔들린다..!",2600],["... !",1500],["!!! 아르세우스가 나타났다..!",2200]],
 sendOut:"[아르세우스 Lv.999999999]",
 win:"... ... ...\n🏆 아르세우스를 쓰러뜨렸다!",
 reward:{"이상한사탕":10,"기력의덩어리":3,"마스터볼":3}},
@@ -766,8 +767,10 @@ document.getElementById("opp-level").innerText="";
 document.getElementById("opp-hp-text").innerText="--/--";
 document.getElementById("opp-hp-bar").style.width="100%";
 saveGame();
+if(T.introBgm)bgmIntro=T.introBgm; // 대사 중에도 터치하면 브금 재생
 for(var j=0;j<T.intro.length;j++){log(T.intro[j][0]);await delay(T.intro[j][1]);}
 trainerId=id;trainerParty=party;trainerIndex=0;trainerPhase=1;isTrainer=true;
+if(bgmIntro){bgmIntro=null;bgmStop();} // 대사용 브금은 배틀이 시작되면 끝
 if(T.once)events[id]=true; // 1회성 이벤트는 시작되는 순간 기록
 oppPkmn=party[0];battleFighters=[playerPkmn];
 updateStatus();
@@ -776,6 +779,7 @@ saveGame();
 isProcessing=false;showSection("action-menu");
 }catch(e){
 console.error(e);
+bgmIntro=null;
 isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;oppPkmn=null;
 isProcessing=false;
 log("트레이너 데이터를 불러오지 못했습니다.\n인터넷 연결을 확인해 주세요.");
@@ -1316,11 +1320,13 @@ var BGM_TRACKS={
 "red":["red_battle_1.mp3"],
 "red#2":["red_battle_2.mp3"],
 "n":["N_battle_bgm.mp3"],
-"center":["77_Poke_Center.mp3"]
+"center":["77_Poke_Center.mp3"],
+"arceus_intro":["Arceus_BGM.mp3"] // 아르세우스: 대사 중에만 1번 재생 (배틀 중에는 브금 없음)
 };
 var bgmEls={},bgmOn=false,bgmIdx=0,bgmBusy=false,bgmId=null;
-function bgmActive(){return isTrainer||inCenter;}
-function bgmKey(){return inCenter?"center":trainerId+(trainerPhase>1?"#"+trainerPhase:"");}
+var bgmIntro=null; // 배틀 전 대사 중에 미리 틀 브금 ID (아르세우스)
+function bgmActive(){return isTrainer||inCenter||bgmIntro!==null;}
+function bgmKey(){return inCenter?"center":(isTrainer?trainerId+(trainerPhase>1?"#"+trainerPhase:""):bgmIntro);}
 function bgmInit(){
 Object.keys(BGM_TRACKS).forEach(function(id){
 bgmEls[id]=BGM_TRACKS[id].map(function(s,i){
@@ -1331,6 +1337,7 @@ return a;
 });
 }
 function bgmNext(id,i){
+if(/_intro$/.test(id))return; // 대사용 브금은 반복하지 않고 1번만
 if(!bgmActive()||!bgmOn||bgmKey()!==id)return;
 var list=bgmEls[id];
 bgmIdx=(i+1)%list.length;
