@@ -1253,6 +1253,8 @@ var target=JUMP_CHEATS[code];
 if(!playerPkmn||gameEnded){alert("모험 중일 때만 사용할 수 있습니다.");return false;}
 if(isProcessing){alert("진행 중입니다. 잠시 후 다시 시도하세요.");return false;}
 floor=target;
+if(code==="EVENT7998")delete events.yoon;
+if(code==="EVENT159998")delete events.arceus;
 isTrainer=false;trainerId=null;trainerParty=[];trainerPhase=1;
 oppPkmn=null;battleFighters=[playerPkmn];
 closeCheat();
